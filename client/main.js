@@ -431,6 +431,9 @@ socket.on('shoot', (data) => {
         }
     }
 
+    // 4. Muzzle Flash
+    createMuzzleFlash(startPos); // [FIX] Add visual flash at gun tip
+
     // 1. Tracers
     createTracer(startPos, data.end);
 
@@ -443,37 +446,68 @@ socket.on('shoot', (data) => {
 });
 
 // --- VISUAL FX ---
+// --- VISUAL FX ---
+// --- VISUAL FX ---
 function createTracer(start, end) {
-    const points = [];
-    points.push(new THREE.Vector3(start.x, start.y, start.z));
-    points.push(new THREE.Vector3(end.x, end.y, end.z));
+    // 1. Setup Geometry and Material
+    const distance = start.distanceTo(end);
+    // Cylinder is Y-up by default. We want thick, bright yellow.
+    const geometry = new THREE.CylinderGeometry(0.05, 0.05, distance, 6); // Thicker (0.05 radius)
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
+    // Rotate geometry so cylinder lies on Z axis instead of Y
+    geometry.rotateX(-Math.PI / 2);
+
+    const material = new THREE.MeshBasicMaterial({
         color: 0xffff00,
         transparent: true,
-        opacity: 0.8,
-        linewidth: 2 // Note: WebGL line width is often always 1
+        opacity: 0.9,
     });
 
-    // Better: Use a thin Mesh (cylinder) for thicker beam
-    // But Line is fast. Let's try TubeGeometry or just MeshLine if available?
-    // For now simple Line is OK, maybe Bloom makes it glow.
-    const line = new THREE.Line(geometry, material);
-    scene.add(line);
+    const mesh = new THREE.Mesh(geometry, material);
 
-    // Fade out
-    let op = 1;
+    // 2. Position and Orient
+    // Place at midpoint
+    const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+    mesh.position.copy(midpoint);
+
+    // Look at end point
+    mesh.lookAt(end);
+
+    scene.add(mesh);
+
+    // 3. Fade Out Animation
+    let op = 1.0;
     const fade = setInterval(() => {
-        op -= 0.1;
-        material.opacity = op;
+        op -= 0.05; // Slower fade (approx 20 frames / 0.3s)
         if (op <= 0) {
             clearInterval(fade);
-            scene.remove(line);
+            scene.remove(mesh);
             geometry.dispose();
             material.dispose();
+        } else {
+            material.opacity = op;
         }
-    }, 16); // 60 FPS
+    }, 16);
+}
+
+function createMuzzleFlash(pos) {
+    // Simple point light flash
+    const light = new THREE.PointLight(0xffff00, 2, 3);
+    light.position.copy(pos);
+    scene.add(light);
+
+    // Optional: Sprite for visual flare
+    // const spriteMaterial = new THREE.SpriteMaterial({ color: 0xffff00 });
+    // const sprite = new THREE.Sprite(spriteMaterial);
+    // sprite.position.copy(pos);
+    // sprite.scale.set(0.5, 0.5, 0.5);
+    // scene.add(sprite);
+
+    // Remove quickly
+    setTimeout(() => {
+        scene.remove(light);
+        // scene.remove(sprite);
+    }, 50);
 }
 
 function createDamageNumber(pos, dmg, isCrit) {
