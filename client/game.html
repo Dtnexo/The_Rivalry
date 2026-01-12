@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HERO RIVALS - ARENA</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ffff;
+            text-shadow: 0 0 10px #00ffff;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin: 0;
+            background: linear-gradient(to right, #00ffff, #ff00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: none;
+            filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.5));
+        }
+
+        #controls-hint {
+            font-size: 1rem;
+            color: #ccc;
+            margin-top: 5px;
+        }
+
+        #health-bar {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 300px;
+            height: 30px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ffff;
+            transform: skewX(-20deg);
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+        }
+
+        #health-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #00ff00, #adff2f);
+            transition: width 0.2s;
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        #connection-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #ff00ff;
+            font-weight: bold;
+            text-transform: uppercase;
+            text-shadow: 0 0 5px #ff00ff;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: #00ffff;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+        }
+
+        /* SETTINGS MENU */
+        #settings-menu {
+            display: none;
+            /* Hidden by default */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            background: rgba(10, 10, 20, 0.9);
+            border: 2px solid #00ffff;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            z-index: 1000;
+        }
+
+        #settings-menu h2 {
+            margin-top: 0;
+            color: #ff00ff;
+            text-transform: uppercase;
+        }
+
+        .setting-row {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        .setting-row label {
+            display: block;
+            margin-bottom: 5px;
+            color: #00ffff;
+            font-size: 0.8rem;
+        }
+
+        input[type=range] {
+            width: 100%;
+        }
+
+        .menu-btn {
+            background: #00ffff;
+            border: none;
+            padding: 10px 20px;
+            color: black;
+            font-weight: bold;
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .menu-btn:hover {
+            background: white;
+        }
+
+        .menu-btn.quit {
+            background: #ff0033;
+            color: white;
+        }
+
+        .bar-fill.armor {
+            background: #ffaa00;
+            color: #ffaa00;
+        }
+
+        /* AMMO DISPLAY */
+        #ammo-display {
+            position: absolute;
+            bottom: 30px;
+            right: 250px;
+            /* Left of skills */
+            text-align: right;
+            color: #00ffff;
+        }
+
+        #ammo-count {
+            font-size: 3rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px #00ffff;
+        }
+
+        #ammo-max {
+            font-size: 1.5rem;
+            color: #aaa;
+        }
+
+        .ammo-label {
+            font-size: 0.8rem;
+            letter-spacing: 2px;
+            color: #aaa;
+        }
+    </style>
+    <script>
+        // Auth Check
+        if (!localStorage.getItem('userId')) {
+            window.location.href = 'index.html';
+        }
+    </script>
+</head>
+
+<body>
+    <div id="crosshair"></div>
+
+    <!-- AMMO DISPLAY -->
+    <div id="ammo-display">
+        <span id="ammo-count">30</span>
+        <span id="ammo-max">/ 30</span>
+        <div class="ammo-label">AMMO</div>
+    </div>
+
+    <!-- SETTINGS MENU -->
+    <div id="settings-menu">
+        <h2>System Config</h2>
+
+        <div class="setting-row">
+            <label>Sensitivity</label>
+            <input type="range" id="sens-slider" min="0.1" max="2.0" step="0.1" value="1.0">
+        </div>
+
+        <div class="setting-row">
+            <label>Brightness</label>
+            <input type="range" id="bright-slider" min="0.5" max="3.0" step="0.1" value="1.5">
+        </div>
+
+        <div class="setting-row">
+            <label>Field of View (FOV)</label>
+            <input type="range" id="fov-slider" min="60" max="110" step="1" value="75">
+        </div>
+
+        <button class="menu-btn" id="resume-btn">Resume</button>
+        <button class="menu-btn quit" onclick="window.location.href='home.html'">Return to Base</button>
+    </div>
+
+    <div id="ui-layer">
+        <h1>HERO RIVALS</h1>
+        <div id="controls-hint">WASD to Move | SPACE to Jump</div>
+    </div>
+    <div id="connection-status">Connecting...</div>
+    <div id="health-bar">
+        <div id="health-fill"></div>
+    </div>
+    <script type="module" src="/main.js"></script>
+</body>
+
+</html>

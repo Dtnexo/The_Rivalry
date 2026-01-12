@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hero Rivals - Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background: #0b0c15;
+            color: white;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            width: 400px;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+        }
+
+        h1 {
+            color: #00ffff;
+            text-shadow: 0 0 10px #00ffff;
+            margin-bottom: 30px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 40px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .stat-box h3 {
+            margin: 0;
+            font-size: 2em;
+            color: #ff00ff;
+        }
+
+        .stat-box p {
+            margin: 0;
+            font-size: 0.8em;
+            color: #aaa;
+        }
+
+        .play-btn {
+            background: linear-gradient(45deg, #00ffff, #0088ff);
+            border: none;
+            padding: 20px 60px;
+            color: white;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 50px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+        }
+
+        .play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.6);
+        }
+
+        .logout {
+            margin-top: 20px;
+            color: #666;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="row">
+        <!-- STATS CARD -->
+        <div class="container">
+            <h1>COMMAND CENTER</h1>
+            <p>Welcome, <span id="username-display">Soldier</span></p>
+
+            <div class="stats">
+                <div class="stat-box">
+                    <h3>0</h3>
+                    <p>WINS</p>
+                </div>
+                <div class="stat-box">
+                    <h3>0.0</h3>
+                    <p>K/D</p>
+                </div>
+            </div>
+
+            <button class="play-btn" onclick="playGame()">DEPLOY</button>
+            <div class="logout" onclick="logout()">Logout</div>
+        </div>
+
+        <!-- ARMORY CARD -->
+        <div class="container armory-container">
+            <h2>ARMORY</h2>
+            <div id="weapon-canvas-container"></div>
+
+            <div class="weapon-selector">
+                <button class="weapon-btn" onclick="selectWeapon('rifle')">RIFLE</button>
+                <button class="weapon-btn" onclick="selectWeapon('sniper')">SNIPER</button>
+                <button class="weapon-btn" onclick="selectWeapon('shotgun')">SHOTGUN</button>
+            </div>
+            <div id="selected-weapon-name">ASSAULT RIFLE</div>
+        </div>
+    </div>
+
+    <!-- UI/UX Styling -->
+    <style>
+        .row {
+            display: flex;
+            gap: 50px;
+            align-items: center;
+        }
+
+        .armory-container {
+            width: 350px;
+        }
+
+        #weapon-canvas-container {
+            width: 100%;
+            height: 200px;
+            background: #3d3e46;
+            /* Dark grey for contrast */
+            border: 1px solid #00ffff;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .weapon-selector {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .weapon-btn {
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #00ffff;
+            color: #00ffff;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-family: 'Orbitron', sans-serif;
+            transition: all 0.2s;
+        }
+
+        .weapon-btn:hover,
+        .weapon-btn.active {
+            background: #00ffff;
+            color: #000;
+        }
+
+        #selected-weapon-name {
+            color: #ff00ff;
+            font-weight: bold;
+            font-size: 1.2em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { createWeaponMesh } from './src/utils/weapons.js';
+
+        // Check Auth
+        const userId = localStorage.getItem('userId');
+        const username = localStorage.getItem('username');
+
+        if (!userId) {
+            window.location.href = 'index.html';
+        }
+
+        document.getElementById('username-display').innerText = username || 'Unknown';
+
+        window.logout = function () {
+            localStorage.clear();
+            window.location.href = 'index.html';
+        }
+
+        window.playGame = function () {
+            window.location.href = 'game.html';
+        }
+
+        // --- 3D PREVIEW SETUP ---
+        const container = document.getElementById('weapon-canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = null; // Use CSS background
+
+        const camera = new THREE.PerspectiveCamera(45, container.offsetWidth / container.offsetHeight, 0.1, 100);
+        camera.position.set(2, 1, 2);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(container.offsetWidth, container.offsetHeight);
+        container.appendChild(renderer.domElement);
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0x00ffff, 1);
+        dirLight.position.set(5, 5, 5);
+        scene.add(dirLight);
+        const accentLight = new THREE.PointLight(0xff00ff, 1);
+        accentLight.position.set(-5, -5, 0);
+        scene.add(accentLight);
+
+        let currentMesh = null;
+        let rotationSpeed = 0.02;
+
+        window.selectWeapon = function (type) {
+            // Save
+            localStorage.setItem('selectedWeapon', type);
+
+            // Update Text & UI
+            document.querySelectorAll('.weapon-btn').forEach(btn => btn.classList.remove('active'));
+            // Simple check to highlight (using text content matching or similar, but simplified here)
+
+            document.getElementById('selected-weapon-name').innerText = type;
+
+            // Update mesh
+            if (currentMesh) scene.remove(currentMesh);
+            currentMesh = createWeaponMesh(type);
+            scene.add(currentMesh);
+        };
+
+        // Init
+        const saved = localStorage.getItem('selectedWeapon') || 'rifle';
+        selectWeapon(saved);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (currentMesh) {
+                currentMesh.rotation.y += rotationSpeed;
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            // Re-calc only if needed, but container fixed width mostly
+        });
+    </script>
+</body>
+
+</html>

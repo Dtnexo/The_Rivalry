@@ -1,0 +1,108 @@
+📄 CAHIER DES CHARGES TECHNIQUE : PROJET "HERO RIVALS"
+1. Vision Globale
+Développement d'un TPS (Third Person Shooter) multijoueur compétitif en 3D "High Performance".
+
+Titre du projet : HERO RIVALS
+
+Concept : Un mélange entre la nervosité de Rivals (Roblox) et les mécaniques de Hero Shooter.
+
+Plateforme cible : Web (Navigateur) & PC.
+
+Cible : Joueurs compétitifs (accès rapide, "easy to play, hard to master").
+
+2. Stack Technique (Full Stack JS + SQL + Docker)
+Le projet doit utiliser une architecture moderne, conteneurisée et maintenable.
+
+Environnement de Développement (DevOps) : Docker (Impératif).
+
+Le projet doit être livré avec un fichier docker-compose.yml qui lance automatiquement :
+
+Le serveur Node.js.
+
+La base de données MySQL (avec persistance des données).
+
+L'interface d'administration de la BDD (type PhpMyAdmin ou Adminer) - Optionnel mais apprécié.
+
+Serveur (Backend) : Node.js.
+
+Architecture : Serveur Autoritaire.
+
+Communication : Geckos.io (UDP/WebRTC) pour le gameplay temps réel.
+
+Base de Données : MySQL.
+
+ORM : Sequelize ou TypeORM.
+
+Client (Moteur 3D) : Three.js ou Babylon.js.
+
+Langage : JavaScript (ES6+) ou TypeScript.
+
+3. Game Design & Statistiques des Héros
+Base de santé standard : 150 HP.
+
+Héros A : "Vanguard" (Polyvalent)
+Rôle : Soldat standard.
+
+HP : 150
+
+Arme : Pulse Rifle (Hitscan, 15 dmg, Cadence rapide).
+
+Skill (Q) : Frag Grenade (Zone explosive, 60-100 dmg).
+
+Ultime (E) : Overdrive (Vitesse +30% pendant 6s).
+
+Héros B : "Shadow" (Sniper)
+Rôle : Assassin agile.
+
+HP : 100
+
+Arme : Railgun (Hitscan, 70 dmg corps / 140 tête).
+
+Skill (Q) : Grappin (Physique réaliste pour se tracter sur les toits).
+
+Ultime (E) : Ghost (Invisibilité 4s, mesh invisible pour les ennemis).
+
+Héros C : "Titan" (Tank)
+Rôle : Encaisser et contrôler.
+
+HP : 250
+
+Arme : Heavy Shotgun (Tir de 8 rayons, gros dégâts courte portée).
+
+Skill (Q) : Energy Wall (Objet 3D bloquant les tirs).
+
+Ultime (E) : Earthhshaker (Stun de zone 1.5s).
+
+4. Mécaniques de Mouvement
+Le "Game Feel" doit être fluide et réactif.
+
+Physique : Cannon.js (ou équivalent) côté serveur.
+
+Mouvements : Sprint, Saut, et Dash (glissade rapide).
+
+Sync : Interpolation des positions obligatoire (Lag compensation).
+
+5. Level Design
+Style graphique : Low Poly / Voxel.
+
+Map "Neon City" : Urbaine, obstacles rectangulaires.
+
+Map "Sky Platforms" : Iles flottantes, vide mortel.
+
+6. Structure de la Base de Données (MySQL)
+Tables minimales requises :
+
+users : id, username, password_hash, created_at.
+
+matches : id, map_name, winner_team_id, duration.
+
+player_stats : user_id, hero_played, kills, deaths, wins.
+
+7. Livrables pour Antigravity
+Code Source : Repo Git complet.
+
+Environnement Docker : Fichiers Dockerfile et docker-compose.yml fonctionnels. La commande docker-compose up doit suffire à lancer le jeu en local.
+
+Script SQL : Initialisation de la BDD (Schema).
+
+Build Web : Version optimisée prête pour la prod.

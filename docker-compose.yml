@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: hero_rivals_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: hero_rivals
+      MYSQL_USER: hero_user
+      MYSQL_PASSWORD: hero_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Server is run locally in Hybrid mode
+  # server:
+  #   build: ./server
+  #   container_name: hero_rivals_server
+  #   ports:
+  #     - "3000:3000"
+  #     - "9208:9208/udp"
+  #   environment:
+  #     - DB_HOST=db
+  #     - DB_USER=hero_user
+  #     - DB_PASSWORD=hero_password
+  #     - DB_NAME=hero_rivals
+  #   depends_on:
+  #     - db
+  #   volumes:
+  #     - ./server:/app
+  #     - /app/node_modules
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: hero_rivals_pma
+    restart: always
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: hero_user
+      PMA_PASSWORD: hero_password
+    ports:
+      - "8081:80"
+
+  client:
+    build: ./client
+    container_name: hero_rivals_client
+    # Force install to fix volume mount overshadowing issue
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+
+volumes:
+  db_data:
