@@ -29,11 +29,11 @@ const io = new Server(server, {
     }
 });
 
-const dbUrl = process.env.MYSQL_URL;
+const dbUrl = process.env.MYSQL_URL || process.env.DATABASE_URL;
 let sequelize;
 
 if (dbUrl) {
-    console.log('[Database] Using connection string from DATABASE_URL');
+    console.log('[Database] Using connection string from environment');
     sequelize = new Sequelize(dbUrl, {
         dialect: 'mysql',
         logging: false,
@@ -44,16 +44,24 @@ if (dbUrl) {
         }
     });
 } else {
-    sequelize = new Sequelize(
-        process.env.DB_NAME || 'hero_rivals',
-        process.env.DB_USER || 'hero_user',
-        process.env.DB_PASSWORD || 'hero_password',
-        {
-            host: process.env.MYSQLHOST || '127.0.0.1',
-            dialect: 'mysql',
-            logging: false
+    // Railway also provides these variables individually
+    const dbName = process.env.MYSQLDATABASE || process.env.DB_NAME || 'hero_rivals';
+    const dbUser = process.env.MYSQLUSER || process.env.DB_USER || 'hero_user';
+    const dbPassword = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || 'hero_password';
+    const dbHost = process.env.MYSQLHOST || process.env.DB_HOST || '127.0.0.1';
+    const dbPort = process.env.MYSQLPORT || process.env.DB_PORT || 3306;
+
+    console.log(`[Database] Connecting to ${dbHost}:${dbPort}/${dbName}`);
+
+    sequelize = new Sequelize(dbName, dbUser, dbPassword, {
+        host: dbHost,
+        port: dbPort,
+        dialect: 'mysql',
+        logging: false,
+        dialectOptions: {
+            ssl: (dbHost !== '127.0.0.1') ? { rejectUnauthorized: false } : false
         }
-    );
+    });
 }
 
 // --- USER MODEL ---
