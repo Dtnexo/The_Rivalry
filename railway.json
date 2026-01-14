@@ -2,11 +2,11 @@
     "$schema": "https://railway.app/railway.schema.json",
     "services": {
         "server": {
-            "source": "./server",
+            "rootDirectory": "server",
             "healthcheck": "/api/login"
         },
         "client": {
-            "source": "./client"
+            "rootDirectory": "client"
         }
     }
 }
