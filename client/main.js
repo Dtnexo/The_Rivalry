@@ -1021,9 +1021,9 @@ setInterval(() => {
         camera.getWorldDirection(camDir);
 
         let shouldShoot = false;
-        if (keys.mouseLeft && !keys.mouseLeftProcessed) {
+        if (keys.mouseLeft) {
             shouldShoot = true;
-            keys.mouseLeftProcessed = true;
+            // keys.mouseLeftProcessed = true; // [FIX] Removed for Auto Fire
         }
 
         // --- SNIPER LOGIC (Inaccuracy + Scop Sensitivity) ---
