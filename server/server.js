@@ -44,7 +44,7 @@ if (dbUrl) {
         process.env.DB_USER || 'hero_user',
         process.env.DB_PASSWORD || 'hero_password',
         {
-            host: process.env.DB_HOST || '127.0.0.1',
+            host: process.env.MYSQLHOST || '127.0.0.1',
             dialect: 'mysql',
             logging: false
         }

@@ -3,10 +3,15 @@
     "services": {
         "server": {
             "rootDirectory": "server",
-            "healthcheck": "/api/login"
+            "build": {
+                "builder": "DOCKER"
+            }
         },
         "client": {
-            "rootDirectory": "client"
+            "rootDirectory": "client",
+            "build": {
+                "builder": "DOCKER"
+            }
         }
     }
 }
