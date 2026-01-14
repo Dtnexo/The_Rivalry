@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hero Rivals - Access Control</title>
+  <title>Hero Rivals - Login</title>
+  <link rel="icon" type="image/png" href="/logo.png">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
 
@@ -255,7 +256,7 @@
   </div>
 
   <script type="module">
-    const API_URL = import.meta.env.VITE_API_URL || '';
+    const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
     window.showFlash = function (message, type = 'error') {
       const container = document.getElementById('flash-container');

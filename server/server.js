@@ -13,7 +13,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: ["http://localhost:5173", "http://localhost:3000"], // Allow Vite dev server
+    credentials: true
+}));
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -24,8 +27,9 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: ["http://localhost:5173", "http://localhost:3000"], // Allow Vite dev server and production
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
@@ -69,7 +73,8 @@ const User = sequelize.define('users', {
     id: { type: Sequelize.INTEGER, autoIncrement: true, primaryKey: true },
     username: { type: Sequelize.STRING, allowNull: false, unique: true },
     password_hash: { type: Sequelize.STRING, allowNull: false },
-    salt: { type: Sequelize.STRING, allowNull: false }
+    salt: { type: Sequelize.STRING, allowNull: false },
+    kills_neon: { type: Sequelize.INTEGER, defaultValue: 0 } // [NEW] Leaderboard
 }, {
     timestamps: true,
     updatedAt: false,
@@ -78,12 +83,25 @@ const User = sequelize.define('users', {
 
 const connectWithRetry = () => {
     sequelize.authenticate()
-        .then(() => {
+        .then(async () => {
             console.log('[Database] Connection has been established successfully.');
-            User.sync();
+
+            // [FIX] 1. Sync basic table (creates if not exists)
+            await User.sync();
+
+            // [FIX] 2. Check for missing columns and add them manually to avoid 'Too many keys' error
+            const tableInfo = await sequelize.getQueryInterface().describeTable('users');
+            if (!tableInfo.kills_neon) {
+                console.log('[Database] Adding missing column: kills_neon');
+                await sequelize.getQueryInterface().addColumn('users', 'kills_neon', {
+                    type: Sequelize.INTEGER,
+                    defaultValue: 0
+                });
+            }
         })
         .catch(err => {
             console.error('[Database] Unable to connect to the database (retrying in 5s)...');
+            console.error(err); // Log full error
             setTimeout(connectWithRetry, 5000);
         });
 };
@@ -408,6 +426,9 @@ io.on('connection', (socket) => {
 
     socket.emit('welcome', { id: socket.id, role: role, weapon: weapon, x: playerBody.position.x, z: playerBody.position.z, ry: initialRy });
 
+    // [NEW] Initial Leaderboard
+    broadcastLeaderboard();
+
     socket.on('disconnect', () => {
         if (players[socket.id]) {
             const p = players[socket.id];
@@ -434,6 +455,9 @@ io.on('connection', (socket) => {
 
             world.removeBody(players[socket.id].body);
             delete players[socket.id];
+
+            // [NEW] Update Leaderboard on Disconnect
+            broadcastLeaderboard();
         }
     });
 
@@ -448,6 +472,29 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+// [NEW] Leaderboard Broadcast Function
+function broadcastLeaderboard() {
+    // Get all connected userIds
+    const connectedIds = Object.values(players).map(p => p.userId).filter(id => id);
+
+    if (connectedIds.length === 0) return;
+
+    User.findAll({
+        where: {
+            id: connectedIds
+        },
+        attributes: ['username', 'kills_neon'],
+        order: [['kills_neon', 'DESC']],
+        limit: 5
+    }).then(users => {
+        const leaderboard = users.map(u => ({
+            username: u.username,
+            kills: u.kills_neon
+        }));
+        io.emit('leaderboard_update', leaderboard);
+    }).catch(err => console.error("Leaderboard Error:", err));
+}
 
 function gameLoop() {
     world.step(1 / TICK_RATE);
@@ -671,6 +718,12 @@ function gameLoop() {
                     });
                 });
 
+                if (p.ammo <= 0) {
+                    p.isReloading = true;
+                    p.reloadEndTime = now + weaponStats.reload;
+                    io.emit('reload_start', { id: p.id, duration: weaponStats.reload });
+                }
+
                 // Check for death AFTER all projectiles have been processed
                 for (const pid in players) {
                     if (players[pid].hp <= 0 && !players[pid].isDead && pid !== p.id) {
@@ -695,9 +748,21 @@ function gameLoop() {
                             victimName: victimUsername,
                             killerName: p.username,
                             killerWeapon: p.weapon,
+                            killerWeapon: p.weapon,
                             respawnTime: 3,
                             nextSpawn: spawnInfo
                         });
+
+                        // [NEW] LEADERBOARD UPDATE
+                        if (p.userId) {
+                            User.increment('kills_neon', { where: { id: p.userId } })
+                                .then(() => {
+                                    // Update local cache if needed, or re-fetch on connect
+                                    // For live updates we need to attach kills to the player object or fetch
+                                    // Ideally, we fetch the updated leaderboard and broadcast
+                                    broadcastLeaderboard();
+                                });
+                        }
 
                         setTimeout(() => {
                             if (players[pid]) {
@@ -772,4 +837,5 @@ setInterval(gameLoop, 1000 / TICK_RATE);
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`[CORS] Active for: http://localhost:5173, http://localhost:3000`);
 });

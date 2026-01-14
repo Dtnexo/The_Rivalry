@@ -5,12 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hero Rivals - Dashboard</title>
+    <link rel="icon" type="image/png" href="/logo.png">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
 
         body {
             font-family: 'Orbitron', sans-serif;
-            background: #0b0c15;
+            background: #050505;
             color: white;
             margin: 0;
             display: flex;
@@ -19,82 +20,272 @@
             justify-content: center;
             height: 100vh;
             overflow: hidden;
+            position: relative;
+        }
+
+        /* DYNAMIC BACKGROUND GRID */
+        body::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background:
+                linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            transform: perspective(500px) rotateX(60deg) translateY(0) translateZ(-200px);
+            animation: gridMove 20s linear infinite;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* RADIAL VIGNETTE */
+        body::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, transparent 0%, #000 85%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        @keyframes gridMove {
+            0% {
+                transform: perspective(500px) rotateX(60deg) translateY(0) translateZ(-200px);
+            }
+
+            100% {
+                transform: perspective(500px) rotateX(60deg) translateY(40px) translateZ(-200px);
+            }
+        }
+
+        /* BACKGROUND LOGO */
+        .bg-logo {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80vh;
+            /* Large size */
+            height: 80vh;
+            background: url('/logo.png') no-repeat center center;
+            background-size: contain;
+            opacity: 0.1;
+            /* Subtle watermark */
+            z-index: 0;
+            /* Behind UI (z-index 100) but above grid (-1) if needed, or just let natural order handle it if grid is body::before */
+            pointer-events: none;
+            filter: drop-shadow(0 0 50px #00ffff);
+            animation: pulseLogo 10s infinite alternate;
+        }
+
+        @keyframes pulseLogo {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 0.08;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1.05);
+                opacity: 0.12;
+            }
+        }
+
+        .row {
+            display: flex;
+            gap: 80px;
+            /* Increased gap */
+            align-items: center;
+            position: relative;
+            /* [FIX] Ensure z-index works */
+            z-index: 100;
+            /* [FIX] Move above background layers */
         }
 
         .container {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 40px;
-            border-radius: 15px;
+            background: rgba(10, 15, 30, 0.2);
+            /* [FIX] More transparent */
+            backdrop-filter: blur(8px);
+            /* [FIX] Slightly less blur */
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            box-shadow:
+                0 0 20px rgba(0, 255, 255, 0.1),
+                inset 0 0 20px rgba(0, 255, 255, 0.05);
+            padding: 50px;
+            border-radius: 4px;
+            /* Angled corners look techier */
             text-align: center;
+            width: 420px;
+            position: relative;
+            clip-path: polygon(0 0,
+                    100% 0,
+                    100% calc(100% - 20px),
+                    calc(100% - 20px) 100%,
+                    0 100%);
+            /* Sci-fi corner cut */
+        }
+
+        /* DECORATIVE BORDER CORNERS */
+        .container::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 1px solid transparent;
+            pointer-events: none;
+            /* [FIX] Allow clicks to pass through */
+        }
+
+        .armory-container {
             width: 400px;
-            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+        }
+
+        h1,
+        h2 {
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 30px;
+            position: relative;
+            display: inline-block;
         }
 
         h1 {
-            color: #00ffff;
-            text-shadow: 0 0 10px #00ffff;
-            margin-bottom: 30px;
+            font-size: 2.2em;
+            color: #fff;
+            text-shadow:
+                0 0 5px #00ffff,
+                0 0 10px #00ffff;
+        }
+
+        h2 {
+            font-size: 1.8em;
+            color: #fff;
+            text-shadow:
+                0 0 5px #ff00ff,
+                0 0 10px #ff00ff;
         }
 
         .stats {
             display: flex;
-            justify-content: space-around;
-            margin-bottom: 40px;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 10px;
+            justify-content: space-between;
+            margin: 40px 0;
+            padding: 0 10px;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.1);
+            /* [FIX] More transparent */
+            padding: 15px 25px;
+            border-left: 2px solid #ff00ff;
+            min-width: 80px;
         }
 
         .stat-box h3 {
             margin: 0;
-            font-size: 2em;
-            color: #ff00ff;
+            font-size: 2.5em;
+            color: #fff;
+            text-shadow: 0 0 10px #ff00ff;
+            font-weight: 700;
         }
 
         .stat-box p {
-            margin: 0;
-            font-size: 0.8em;
-            color: #aaa;
+            margin: 5px 0 0 0;
+            font-size: 0.9em;
+            color: #00ffff;
+            letter-spacing: 2px;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: bold;
         }
 
-        .play-btn {
-            background: linear-gradient(45deg, #00ffff, #0088ff);
-            border: none;
-            padding: 20px 60px;
-            color: white;
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.5em;
+        .auth-info p {
+            color: #aaa;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        #username-display {
+            color: #00ffff;
             font-weight: bold;
+        }
+
+        /* BUTTONS */
+        .play-btn {
+            background: transparent;
+            border: 2px solid #00ffff;
+            padding: 20px 0;
+            width: 100%;
+            color: #00ffff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.6em;
+            font-weight: 900;
             cursor: pointer;
-            border-radius: 50px;
-            transition: all 0.3s ease;
             text-transform: uppercase;
-            letter-spacing: 2px;
-            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+            letter-spacing: 4px;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+            margin-top: 20px;
+        }
+
+        .play-btn::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.4), transparent);
+            transition: 0.5s;
         }
 
         .play-btn:hover {
-            transform: scale(1.05);
+            background: #00ffff;
+            color: #000;
             box-shadow: 0 0 40px rgba(0, 255, 255, 0.6);
         }
 
+        .play-btn:hover::before {
+            left: 100%;
+        }
+
         .logout {
-            margin-top: 20px;
+            margin-top: 25px;
             color: #666;
             cursor: pointer;
-            text-decoration: underline;
+            font-size: 0.9em;
+            letter-spacing: 1px;
+            transition: color 0.3s;
+            text-decoration: none;
+            font-family: 'Rajdhani', sans-serif;
+            text-transform: uppercase;
+        }
+
+        .logout:hover {
+            color: #ff0055;
+            text-shadow: 0 0 5px #ff0055;
         }
     </style>
 </head>
 
 <body>
+    <div class="bg-logo"></div>
     <div class="row">
         <!-- STATS CARD -->
         <div class="container">
             <h1>COMMAND CENTER</h1>
-            <p>Welcome, <span id="username-display">Soldier</span></p>
+            <div class="auth-info">
+                <p>Welcome, <span id="username-display">Soldier</span></p>
+            </div>
 
             <div class="stats">
                 <div class="stat-box">
@@ -126,57 +317,72 @@
     </div>
 
     <!-- UI/UX Styling -->
+    <!-- UI/UX Styling -->
     <style>
-        .row {
-            display: flex;
-            gap: 50px;
-            align-items: center;
-        }
-
-        .armory-container {
-            width: 350px;
-        }
-
+        /* ARMORY SPECIFIC */
         #weapon-canvas-container {
             width: 100%;
-            height: 200px;
-            background: #3d3e46;
-            /* Dark grey for contrast */
-            border: 1px solid #00ffff;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            overflow: hidden;
+            height: 220px;
+            background: radial-gradient(circle at center, #2a2a35 0%, #1a1a20 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        /* Grid overlay on canvas */
+        #weapon-canvas-container::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
         }
 
         .weapon-selector {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             justify-content: center;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
         .weapon-btn {
-            background: rgba(0, 255, 255, 0.1);
-            border: 1px solid #00ffff;
-            color: #00ffff;
-            padding: 8px 12px;
+            background: transparent;
+            border: 1px solid #555;
+            color: #888;
+            padding: 10px 15px;
             cursor: pointer;
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: bold;
+            font-size: 1em;
+            letter-spacing: 1px;
             transition: all 0.2s;
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+            min-width: 90px;
         }
 
         .weapon-btn:hover,
         .weapon-btn.active {
-            background: #00ffff;
-            color: #000;
+            border-color: #ff00ff;
+            color: #ff00ff;
+            background: rgba(255, 0, 255, 0.1);
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.3);
+            text-shadow: 0 0 5px #ff00ff;
         }
 
         #selected-weapon-name {
-            color: #ff00ff;
-            font-weight: bold;
-            font-size: 1.2em;
+            color: #fff;
+            text-shadow: 0 0 10px #ff00ff;
+            font-weight: 700;
+            font-size: 1.5em;
             text-transform: uppercase;
-            letter-spacing: 2px;
+            letter-spacing: 6px;
+            margin-top: 10px;
         }
     </style>
 
@@ -263,6 +469,17 @@
             // Re-calc only if needed, but container fixed width mostly
         });
     </script>
+    </script>
+    <style>
+        .logo-img {
+            width: 80px;
+            height: auto;
+            margin-bottom: 0px;
+            filter: drop-shadow(0 0 10px #00ffff);
+            border-radius: 50%;
+            /* Optional circular cut if needed, but let's stick to raw image first */
+        }
+    </style>
 </body>
 
 </html>

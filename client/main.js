@@ -13,7 +13,7 @@ import { NeonCity } from './src/levels/NeonCity.js';
 import { createWeaponMesh } from './src/utils/weapons.js';
 
 // --- CONFIG ---
-const SERVER_URL = import.meta.env.VITE_API_URL || ''; // Default to same origin for monorepo
+const SERVER_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
 const TICK_RATE = 60;
 
 // --- STATE ---
@@ -496,11 +496,14 @@ socket.on('reload_start', (data) => {
         document.getElementById('ammo-count').style.color = 'red';
         document.getElementById('ammo-count').innerText = 'RELOADING...';
 
+        // [FIX] Block Aiming
+        amIReloading = true;
+
         // Local Animation
         const fpsWeapon = camera.getObjectByName('fpsWeapon');
         if (fpsWeapon) {
             fpsWeapon.rotation.x = Math.PI / 2; // Point down
-            fpsWeapon.position.y -= 0.2; // Lower gun
+            // fpsWeapon.position.y -= 0.2; // Lower gun (Optional, sometimes distracting if too much)
         }
     } else {
         // [FIX] Remote Animation
@@ -546,10 +549,12 @@ socket.on('reload_end', (data) => {
         document.getElementById('ammo-count').innerText = data.ammo;
 
         // Local Restore
+        amIReloading = false; // [FIX] Release aim block
+
         const fpsWeapon = camera.getObjectByName('fpsWeapon');
         if (fpsWeapon) {
             fpsWeapon.rotation.x = 0;
-            fpsWeapon.position.y += 0.2;
+            // fpsWeapon.position.y += 0.2;
         }
     } else {
         // [FIX] Remote Restore
@@ -657,7 +662,9 @@ socket.on('shoot', (data) => {
 
         // Bullet & Damage
         const end = new THREE.Vector3(data.end.x, data.end.y, data.end.z);
-        createBulletProjectile(startPos, end, data.hitId, data.damage, data.zone);
+        // [FIX] Only show damage numbers if WE dealt the damage
+        const damageToShow = (data.id === myFunctionId) ? data.damage : 0;
+        createBulletProjectile(startPos, end, data.hitId, damageToShow, data.zone);
     }
 });
 
@@ -960,6 +967,19 @@ socket.on('death', (data) => {
     }
 });
 
+// --- LEADERBOARD ---
+socket.on('leaderboard_update', (data) => {
+    const list = document.getElementById('leaderboard-list');
+    if (!list) return;
+
+    list.innerHTML = data.map((p, i) => `
+        <div class="leaderboard-entry">
+            <span>${i + 1}. ${p.username}</span>
+            <span>${p.kills}</span>
+        </div>
+    `).join('');
+});
+
 // --- INPUT ---
 const keys = { w: false, a: false, s: false, d: false, ' ': false, mouseLeft: false, mouseLeftProcessed: false, mouseRight: false, r: false };
 window.addEventListener('keydown', (e) => {
@@ -1008,7 +1028,8 @@ setInterval(() => {
 
         // --- SNIPER LOGIC (Inaccuracy + Scop Sensitivity) ---
         const weaponName = localStorage.getItem('selectedWeapon') || 'rifle';
-        const isAiming = keys.mouseRight;
+        // [FIX] Block aiming if reloading
+        const isAiming = keys.mouseRight && !amIReloading;
 
         // 1. Sensitivity
         if (isAiming) {
@@ -1067,19 +1088,18 @@ setInterval(() => {
             if (fpsWeapon) fpsWeapon.visible = true;
         }
 
-        // Lerp FOV (Instant when aiming for smooth aim, gradual when un-aiming)
-        if (Math.abs(camera.fov - targetFov) > 0.1) {
-            if (isAiming) {
-                // Instant transition when zooming in - no shake
-                camera.fov = targetFov;
-            } else {
-                // Gradual transition when zooming out
-                camera.fov += (targetFov - camera.fov) * 0.2;
-            }
-            camera.updateProjectionMatrix();
-        }
+        // [FIX] Update Globals for Animation Loop
+        isAimingGlobal = isAiming;
+        targetFovGlobal = isAiming ? 20 : parseInt(localStorage.getItem('userFOV') || '75');
+
+        // Lerp FOV moved to animate() for smoothness
     }
 }, 1000 / 30);
+
+// [FIX] Global Aim State for Animation Loop
+let isAimingGlobal = false;
+let targetFovGlobal = 75; // Default
+let amIReloading = false; // [NEW] Track reload state
 
 // --- FPS WEAPON SETUP ---
 function attachFPSWeapon() {
@@ -1143,6 +1163,17 @@ function animate() {
     }
 
     renderer.render(scene, camera);
+
+    // [FIX] Smooth FOV Interpolation (60fps+)
+    if (Math.abs(camera.fov - targetFovGlobal) > 0.1) {
+        // Use time-independent lerp if possible, or simple smooth factor
+        // A factor of 0.1 at 60fps is approx 0.2 at 30fps. 
+        // We want fast snap for sniper.
+        const lerpFactor = isAimingGlobal ? 0.25 : 0.15;
+
+        camera.fov += (targetFovGlobal - camera.fov) * lerpFactor;
+        camera.updateProjectionMatrix();
+    }
 }
 animate();
 
