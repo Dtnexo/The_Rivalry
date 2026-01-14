@@ -24,7 +24,7 @@ const io = new Server(server, {
     }
 });
 
-const dbUrl = process.env.DATABASE_URL;
+const dbUrl = process.env.MYSQL_URL;
 let sequelize;
 
 if (dbUrl) {
