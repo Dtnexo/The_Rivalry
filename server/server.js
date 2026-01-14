@@ -24,16 +24,32 @@ const io = new Server(server, {
     }
 });
 
-const sequelize = new Sequelize(
-    process.env.DB_NAME || 'hero_rivals',
-    process.env.DB_USER || 'hero_user',
-    process.env.DB_PASSWORD || 'hero_password',
-    {
-        host: process.env.DB_HOST || '127.0.0.1',
+const dbUrl = process.env.DATABASE_URL;
+let sequelize;
+
+if (dbUrl) {
+    console.log('[Database] Using connection string from DATABASE_URL');
+    sequelize = new Sequelize(dbUrl, {
         dialect: 'mysql',
-        logging: false
-    }
-);
+        logging: false,
+        dialectOptions: {
+            ssl: {
+                rejectUnauthorized: false
+            }
+        }
+    });
+} else {
+    sequelize = new Sequelize(
+        process.env.DB_NAME || 'hero_rivals',
+        process.env.DB_USER || 'hero_user',
+        process.env.DB_PASSWORD || 'hero_password',
+        {
+            host: process.env.DB_HOST || '127.0.0.1',
+            dialect: 'mysql',
+            logging: false
+        }
+    );
+}
 
 // --- USER MODEL ---
 const User = sequelize.define('users', {
@@ -51,7 +67,7 @@ const connectWithRetry = () => {
     sequelize.authenticate()
         .then(() => {
             console.log('[Database] Connection has been established successfully.');
-            User.sync({ alter: true });
+            User.sync();
         })
         .catch(err => {
             console.error('[Database] Unable to connect to the database (retrying in 5s)...');
@@ -64,7 +80,9 @@ connectWithRetry();
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+        if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+        if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
@@ -77,6 +95,10 @@ app.post('/api/register', async (req, res) => {
 
         res.json({ success: true, userId: user.id });
     } catch (err) {
+        if (err.name === 'SequelizeUniqueConstraintError') {
+            console.log(`[Register] Duplicate username attempt: ${req.body.username}`);
+            return res.status(400).json({ error: 'Username already taken' });
+        }
         console.error("Register Error:", err);
         res.status(500).json({ error: 'Server Error: ' + err.message });
     }
@@ -85,7 +107,7 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
         const user = await User.findOne({ where: { username } });
         if (!user) return res.status(401).json({ error: 'Invalid credentials' });
@@ -198,20 +220,12 @@ createBody(containerShape, 15, 1.5, 25, 0, 0, -0.2, 0);
 createBody(containerShape, -15, 1.5, -25, 0, 0, -0.4, 0);
 createBody(containerShape, 15, 1.5, -25, 0, 0, 0.1, 0);
 
-// Cartons
-const crateShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
-createBody(crateShape, 5, 0.5, 5, 10);
-createBody(crateShape, 5, 0.5, 6);
-createBody(crateShape, 5, 1.5, 5.5);
-createBody(crateShape, -8, 0.5, 2);
-createBody(crateShape, -9, 0.5, 2.5);
-createBody(crateShape, 0, 0.5, -8);
-createBody(crateShape, 1, 0.5, -8);
-createBody(crateShape, 0.5, 1.5, -8);
+// [REMOVED] Cartons
 
 
 // --- GAME STATE ---
 const players = {};
+const persistentStates = {}; // [NEW] Store state by userId { userId: { x, y, z, hp, ammo, weapon } }
 const TICK_RATE = 60;
 const HERO_STATS = {
     vanguard: { hp: 150, speed: 12, radius: 1 },
@@ -222,28 +236,35 @@ const HERO_STATS = {
 const WEAPON_STATS = {
     rifle: { damage: 18, fireRate: 100, range: 60, falloff: 0.4, ammo: 30, reload: 2000 },
     sniper: { damage: 85, fireRate: 1200, range: 200, falloff: 0.95, ammo: 5, reload: 3000 },
-    shotgun: { damage: 9, fireRate: 800, range: 20, count: 6, spread: 0.3, ammo: 8, reload: 2500 }
+    shotgun: { damage: 20, fireRate: 800, range: 35, falloff: 0.2, count: 6, spread: 0.3, ammo: 8, reload: 2500 }
 };
 
 function createPlayerBody(role, x, z) {
     const stats = HERO_STATS[role] || HERO_STATS.vanguard;
     const body = new CANNON.Body({
         mass: 70,
-        position: new CANNON.Vec3(x, 10, z), // Spawn Higher
-        shape: new CANNON.Sphere(stats.radius),
+        position: new CANNON.Vec3(x, 10, z),
         material: playerMaterial,
         fixedRotation: true,
         collisionFilterGroup: 2,
         collisionFilterMask: 1 | 2,
         linearDamping: 0.0
     });
+
+    // [FIX] Hitbox aligned with visual mesh (approx -1.2 to +1.9 Y range)
+    // Box dimensions: Width 0.8 (Half 0.4), Total Height 3.1 (Half 1.55), Depth 0.8 (Half 0.4)
+    // Offset center Y by 0.35 to match visual (Hips at 0)
+    const shape = new CANNON.Box(new CANNON.Vec3(0.5, 1.55, 0.5));
+    body.addShape(shape, new CANNON.Vec3(0, 0.35, 0));
+
     world.addBody(body);
     return body;
 }
 
 // --- SPAWN POINTS ---
+// --- SPAWN POINTS ---
 const SPAWN_POINTS = [
-    { x: 0, y: 10, z: 0 },    // Center
+    // Removed Center { x: 0, y: 10, z: 0 }
     { x: -15, y: 10, z: -10 }, // West/North
     { x: 15, y: 10, z: 10 },   // East/South
     { x: 18, y: 10, z: 0 },    // East Side
@@ -252,8 +273,15 @@ const SPAWN_POINTS = [
     { x: 0, y: 10, z: 18 }     // South Side
 ];
 
-function getRandomSpawn() {
-    return SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
+function getRandomSpawn(excludeIndex = -1) {
+    let index;
+    let attempts = 0;
+    do {
+        index = Math.floor(Math.random() * SPAWN_POINTS.length);
+        attempts++;
+    } while (index === excludeIndex && attempts < 10);
+
+    return { ...SPAWN_POINTS[index], index };
 }
 
 // Socket Auth
@@ -276,39 +304,110 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
     const username = socket.username || 'Unknown';
-    const weapon = socket.handshake.query.weapon || 'rifle'; // Read weapon from query
-    console.log(`[Connect] Player connected: ${socket.id} (${username}) - Weapon: ${weapon}`);
+
+    // [FIX] Prevent Duplicate Login
+    for (const id in players) {
+        if (players[id].username === username) {
+            console.log(`[Connect] Rejecting duplicate ${username}`);
+            socket.emit('connect_error_msg', 'Username already in game');
+            // Delay disconnect to ensure message is sent
+            setTimeout(() => {
+                socket.disconnect();
+            }, 1000);
+            return;
+        }
+    }
+
+    const userId = socket.userId;
+    let weapon = socket.handshake.query.weapon || 'rifle';
 
     let role = 'vanguard';
-    const spawn = getRandomSpawn(); // Random Spawn
-    const body = createPlayerBody(role, spawn.x, spawn.z);
+    let startHp = HERO_STATS[role].hp;
+    let startAmmo = WEAPON_STATS[weapon] ? WEAPON_STATS[weapon].ammo : 30;
+
+    let playerBody;
+    let initialSpawnInfo;
+    let initialRy = 0;
+
+    // [FIX] Restore State if exists
+    if (persistentStates[userId] && persistentStates[userId].hp > 0) {
+        const saved = persistentStates[userId];
+        console.log(`[Connect] Restoring state for ${username}`);
+        initialSpawnInfo = { x: saved.x, y: saved.y, z: saved.z };
+        startHp = saved.hp;
+        startAmmo = saved.ammo;
+        // [FIX] Prioritize New Weapon Selection over Saved State
+        // The user selected a weapon in the lobby, so we should honor it.
+        // If they didn't select one (impossible via UI?), fallback to saved.
+        weapon = socket.handshake.query.weapon || saved.weapon || 'rifle';
+
+        // Reset Ammo if weapon changed
+        if (weapon !== saved.weapon) {
+            startAmmo = WEAPON_STATS[weapon].ammo;
+        }
+
+        role = saved.role || role; // Restore role
+        initialRy = saved.ry || 0; // Restore rotation
+        playerBody = createPlayerBody(role, initialSpawnInfo.x, initialSpawnInfo.z);
+        playerBody.position.set(initialSpawnInfo.x, initialSpawnInfo.y, initialSpawnInfo.z);
+    } else {
+        initialSpawnInfo = getRandomSpawn();
+        playerBody = createPlayerBody(role, initialSpawnInfo.x, initialSpawnInfo.z);
+        playerBody.position.set(initialSpawnInfo.x, 3, initialSpawnInfo.z); // Ensure Y=3 for fresh spawn
+    }
+
+    console.log(`[Connect] Player connected: ${socket.id} (${username}) - Weapon: ${weapon}`);
 
     players[socket.id] = {
         id: socket.id,
+        userId: userId, // Store userId for saving later
         username: username,
-        body: body,
+        body: playerBody,
         role: role,
-        weapon: weapon, // Store weapon
-        hp: HERO_STATS[role].hp,
+        weapon: weapon,
+        hp: startHp,
         inputs: { forward: false, backward: false, left: false, right: false, jump: false, shoot: false, reload: false, viewAngle: 0 },
         lastGroundedTime: 0,
         jumpQueuedTime: 0,
         lastJumpTime: 0,
         prevJump: false,
+        isDead: false, // [NEW] Track death state
+        lastSpawnIndex: initialSpawnInfo.index || -1, // Track last spawn point index
 
         // Weapon State
-        ammo: WEAPON_STATS[weapon] ? WEAPON_STATS[weapon].ammo : 30,
+        ammo: startAmmo,
         maxAmmo: WEAPON_STATS[weapon] ? WEAPON_STATS[weapon].ammo : 30,
         isReloading: false,
         reloadEndTime: 0,
         lastShootTime: 0
     };
 
-
-    socket.emit('welcome', { id: socket.id, role: role, weapon: weapon, x: spawn.x, z: spawn.z });
+    socket.emit('welcome', { id: socket.id, role: role, weapon: weapon, x: playerBody.position.x, z: playerBody.position.z, ry: initialRy });
 
     socket.on('disconnect', () => {
         if (players[socket.id]) {
+            const p = players[socket.id];
+            // [FIX] Save State on Disconnect
+            if (p.userId) {
+                // Calculate View Angle (ry)
+                let savedRy = 0;
+                if (p.inputs && p.inputs.viewDir) {
+                    savedRy = Math.atan2(p.inputs.viewDir.x, p.inputs.viewDir.z) - Math.PI; // Consistent with gameLoop
+                }
+
+                persistentStates[p.userId] = {
+                    x: p.body.position.x,
+                    y: p.body.position.y,
+                    z: p.body.position.z,
+                    hp: p.hp,
+                    ammo: p.ammo,
+                    weapon: p.weapon,
+                    role: p.role, // Save role
+                    ry: savedRy // [NEW] Save Rotation
+                };
+                console.log(`[Disconnect] Saved state for ${p.username}`);
+            }
+
             world.removeBody(players[socket.id].body);
             delete players[socket.id];
         }
@@ -338,7 +437,7 @@ function gameLoop() {
 
         // 1. Raycast (Ground Check)
         const start = p.body.position;
-        const dist = stats.radius + 1.5;
+        const dist = stats.radius + 0.2; // Reduced from 1.5 to prevents floating
         const end = new CANNON.Vec3(start.x, start.y - dist, start.z);
         const options = {
             skipBackfaces: true,
@@ -492,6 +591,10 @@ function gameLoop() {
                     let hitId = null;
                     let dmg = 0;
 
+                    // --- FIX START: Define zone here so it is accessible later ---
+                    let zone = null;
+                    // --- FIX END ---
+
                     if (hit) {
                         hitPoint = rayResult.hitPointWorld;
 
@@ -503,59 +606,121 @@ function gameLoop() {
                                     // DAMAGE FALLOFF
                                     const dist = shootStart.distanceTo(hitPoint);
                                     let falloffMult = 1.0;
-                                    // Linear falloff: 100% at 0 distance, 'falloff' value at max range
                                     const t = Math.min(1, dist / weaponStats.range);
                                     falloffMult = 1.0 - t * (1.0 - weaponStats.falloff);
 
-                                    dmg = Math.ceil(weaponStats.damage * falloffMult);
+                                    // DAMAGE ZONES
+                                    const dy = hitPoint.y - players[pid].body.position.y;
 
-                                    // HEADSHOT (Rough Approximation: Top 20% of bounding box)
-                                    // Radius is stored in HERO_STATS
-                                    // But hitbox is sphere. Center Y is body.position.y.
-                                    // Simple check: hitPoint.y > body.position.y + 0.5?
-                                    if (hitPoint.y > players[pid].body.position.y + 0.4) {
-                                        dmg *= 1.5;
-                                        dmg = Math.floor(dmg);
+                                    // --- FIX START: Remove 'let', just assign to the variable created above ---
+                                    zone = 'body';
+                                    // --- FIX END ---
+
+                                    let mult = 1.0;
+
+                                    if (dy > 1.4) {
+                                        zone = 'head';
+                                        mult = 2.0;
+                                    } else if (dy < 0.4) {
+                                        zone = 'legs';
+                                        mult = 0.7;
                                     }
 
+                                    dmg = Math.ceil(weaponStats.damage * falloffMult * mult);
+
+                                    // Apply Damage
                                     players[pid].hp -= dmg;
-                                    if (players[pid].hp <= 0) {
-                                        players[pid].hp = HERO_STATS[players[pid].role].hp;
-                                        // RESPAWN
-                                        const respawn = getRandomSpawn();
-                                        players[pid].body.position.set(respawn.x, 10, respawn.z);
-                                        players[pid].body.velocity.set(0, 0, 0);
-                                        // Reset Ammo too on death?
-                                        players[pid].ammo = WEAPON_STATS[players[pid].weapon].ammo;
-                                    }
                                     break;
                                 }
                             }
                         }
                     }
 
+                    // [FIX] Always emit shoot event (for tracers)
                     io.emit('shoot', {
-                        shooterId: p.id,
-                        start: { x: shootStart.x, y: shootStart.y - 0.2, z: shootStart.z },
+                        id: p.id,
+                        start: { x: shootStart.x, y: shootStart.y, z: shootStart.z },
                         end: { x: hitPoint.x, y: hitPoint.y, z: hitPoint.z },
                         hitId: hitId,
                         damage: dmg,
-                        isCrit: (dmg > weaponStats.damage * 1.2) // Simple crit check flag
+                        zone: zone
                     });
                 });
+
+                // Check for death AFTER all projectiles have been processed
+                for (const pid in players) {
+                    if (players[pid].hp <= 0 && !players[pid].isDead && pid !== p.id) {
+                        players[pid].hp = 0;
+                        players[pid].isDead = true;
+
+                        players[pid].body.collisionFilterGroup = 0;
+                        players[pid].body.collisionFilterMask = 0;
+
+                        const spawnInfo = getRandomSpawn(players[pid].lastSpawnIndex);
+                        players[pid].nextSpawn = spawnInfo;
+                        players[pid].lastSpawnIndex = spawnInfo.index;
+
+                        const victimUsername = players[pid].username;
+                        console.log('[Death] Victim:', pid, 'Username:', victimUsername);
+
+                        io.emit('death', {
+                            id: pid,
+                            x: players[pid].body.position.x,
+                            y: players[pid].body.position.y,
+                            z: players[pid].body.position.z,
+                            victimName: victimUsername,
+                            killerName: p.username,
+                            killerWeapon: p.weapon,
+                            respawnTime: 3,
+                            nextSpawn: spawnInfo
+                        });
+
+                        setTimeout(() => {
+                            if (players[pid]) {
+                                const respawn = players[pid].nextSpawn;
+                                if (respawn) {
+                                    players[pid].body.position.set(respawn.x, 3, respawn.z);
+                                    players[pid].body.velocity.set(0, 0, 0);
+                                }
+                                players[pid].body.collisionFilterGroup = 2;
+                                players[pid].body.collisionFilterMask = 1 | 2;
+
+                                players[pid].hp = HERO_STATS[players[pid].role].hp;
+                                players[pid].ammo = WEAPON_STATS[players[pid].weapon].ammo;
+                                players[pid].isDead = false;
+                                delete players[pid].nextSpawn;
+                            }
+                        }, 3000);
+                    }
+                }
+                // Valid point. But 'TraycastClosest' finds closest.
+                // If !hasHit, we should emit here?
+                // Check if hasHit. The 'result' object has .hasHit boolean.
+                // The raycast method used above 'raycastClosest' returns boolean? 
+                // No, world.raycastClosest(..., options, result).
+                // We check 'result.hasHit'.
+                // So if Miss, we emit here. If Hit, we emitted above.
+                // But wait, the loop above emits.
+                // I should ONLY emit here if we MISSED.
+
             }
         }
 
         // Boundaries
         if (p.body.position.y < -20) {
-            const respawn = getRandomSpawn();
-            p.body.position.set(respawn.x, 10, respawn.z);
+            const spawnInfo = getRandomSpawn(p.lastSpawnIndex);
+            p.body.position.set(spawnInfo.x, 3, spawnInfo.z); // Lower height
             p.body.velocity.set(0, 0, 0);
+            p.lastSpawnIndex = spawnInfo.index;
         }
 
         let ry = 0;
+        let rx = 0; // [NEW] Pitch
         if (inputs.viewDir) {
             ry = Math.atan2(inputs.viewDir.x, inputs.viewDir.z) - Math.PI;
+            // Approximate pitch from Y component (vector is unit length)
+            // Clamp roughly to -PI/2 to PI/2
+            rx = -Math.asin(Math.max(-1, Math.min(1, inputs.viewDir.y)));
         }
 
         snapshot.players.push({
@@ -564,11 +729,14 @@ function gameLoop() {
             x: p.body.position.x,
             y: p.body.position.y,
             z: p.body.position.z,
+            z: p.body.position.z,
             ry: ry,
+            rx: rx, // [NEW] Sync Pitch
             role: p.role,
             weapon: p.weapon, // Sync Weapon
             ammo: p.ammo, // Sync Ammo
-            hp: p.hp
+            hp: p.hp,
+            isDead: p.isDead // [NEW] Sync death state
         });
     }
 
@@ -577,7 +745,7 @@ function gameLoop() {
 
 setInterval(gameLoop, 1000 / TICK_RATE);
 
-const PORT = 3000;
-server.listen(PORT, () => {
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });

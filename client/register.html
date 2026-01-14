@@ -177,75 +177,162 @@
             font-weight: bold;
             font-size: 0.9em;
         }
+
+        #error-msg {
+            height: 20px;
+            color: #ff3333;
+            margin-top: 15px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        /* Flash Message CSS */
+        #flash-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .flash-msg {
+            background: rgba(0, 0, 0, 0.9);
+            border-left: 5px solid #ff00ff;
+            color: #fff;
+            padding: 15px 25px;
+            margin-bottom: 10px;
+            border-radius: 2px;
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            animation: slideIn 0.3s ease-out forwards;
+            min-width: 250px;
+        }
+
+        .flash-msg.error {
+            border-color: #ff3333;
+            background: rgba(40, 0, 0, 0.9);
+        }
+
+        .flash-msg.success {
+            border-color: #00ff00;
+            background: rgba(0, 40, 0, 0.9);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
     </style>
 </head>
 
 <body>
 
-    <div class="login-card">
-        <h1>Register</h1>
-        <div class="subtitle">Join the Rivalry</div>
+    <body>
+        <div id="flash-container"></div>
+        <div class="login-card">
+            <h1>Register</h1>
+            <div class="subtitle">Join the Rivalry</div>
 
-        <div class="input-container">
-            <span class="input-label">NEW CODENAME</span>
-            <input type="text" id="username" autocomplete="off">
+            <div class="input-container">
+                <span class="input-label">NEW CODENAME</span>
+                <input type="text" id="username" autocomplete="off">
+            </div>
+
+            <div class="input-container">
+                <span class="input-label">SET PASSCODE</span>
+                <input type="password" id="password">
+            </div>
+
+            <button onclick="submitForm()" class="btn-main">CREATE PROFILE</button>
+
+            <div class="link-text">
+                Already have an account? <a href="index.html">LOGIN HERE</a>
+            </div>
         </div>
 
-        <div class="input-container">
-            <span class="input-label">SET PASSCODE</span>
-            <input type="password" id="password">
-        </div>
+        <script type="module">
+            const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-        <button onclick="submitForm()" class="btn-main">CREATE PROFILE</button>
-        <div id="error-msg"></div>
+            window.showFlash = function (message, type = 'error') {
+                const container = document.getElementById('flash-container');
+                const div = document.createElement('div');
+                div.className = `flash-msg ${type}`;
+                div.innerText = message;
+                container.appendChild(div);
 
-        <div class="link-text">
-            Already have an account? <a href="index.html">LOGIN HERE</a>
-        </div>
-    </div>
+                // Audio Cue (Optional)
+                // const audio = new Audio(type === 'error' ? 'error.mp3' : 'success.mp3');
+                // audio.play().catch(() => {});
 
-    <script type="module">
-        const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+                setTimeout(() => {
+                    div.style.animation = 'fadeOut 0.5s ease-in forwards';
+                    setTimeout(() => div.remove(), 500);
+                }, 3000);
+            };
 
-        window.submitForm = async function () {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const errorDiv = document.getElementById('error-msg');
+            window.submitForm = async function () {
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
 
-            if (!username || !password) {
-                errorDiv.innerText = 'CREDENTIALS REQUIRED';
-                return;
-            }
-
-            errorDiv.innerText = 'PROCESSING...';
-
-            try {
-                const res = await fetch(`${API_URL}/api/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-
-                const data = await res.json();
-
-                if (!res.ok) {
-                    const errorMsg = data.error || 'REGISTRATION FAILED';
-                    errorDiv.innerText = errorMsg;
-                    alert('Error: ' + errorMsg); // Pop up for visibility
-                } else {
-                    // Success
-                    localStorage.setItem('userId', data.userId);
-                    if (data.username) localStorage.setItem('username', data.username);
-                    else localStorage.setItem('username', username);
-
-                    window.location.href = 'home.html';
+                if (!username || !password) {
+                    showFlash('USERNAME AND PASSWORD REQUIRED', 'error');
+                    return;
                 }
-            } catch (err) {
-                console.error(err);
-                errorDiv.innerText = 'NETWORK FAILURE';
+
+                if (username.length < 3) {
+                    showFlash('USERNAME MUST BE AT LEAST 3 CHARACTERS', 'error');
+                    return;
+                }
+
+                if (password.length < 8) {
+                    showFlash('PASSWORD MUST BE AT LEAST 8 CHARACTERS', 'error');
+                    return;
+                }
+
+
+                try {
+                    const res = await fetch(`${API_URL}/api/register`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+
+                    const data = await res.json();
+
+                    if (!res.ok) {
+                        const errorMsg = data.error || 'REGISTRATION FAILED';
+                        showFlash(errorMsg, 'error'); // Show Flash
+                    } else {
+                        // Success
+                        showFlash('REGISTRATION SUCCESSFUL', 'success');
+                        setTimeout(() => {
+                            localStorage.setItem('userId', data.userId);
+                            if (data.username) localStorage.setItem('username', data.username);
+                            else localStorage.setItem('username', username);
+
+                            window.location.href = 'home.html';
+                        }, 1000); // Wait a second to show message
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showFlash('NETWORK FAILURE', 'error');
+                }
             }
-        }
-    </script>
-</body>
+        </script>
+    </body>
 
 </html>

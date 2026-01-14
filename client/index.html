@@ -176,11 +176,63 @@
       font-weight: bold;
       font-size: 0.9em;
     }
+
+    /* Flash Message CSS */
+    #flash-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+
+    .flash-msg {
+      background: rgba(0, 0, 0, 0.9);
+      border-left: 5px solid #00ffff;
+      color: #fff;
+      padding: 15px 25px;
+      margin-bottom: 10px;
+      border-radius: 2px;
+      font-family: 'Orbitron', sans-serif;
+      text-transform: uppercase;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      animation: slideInFlash 0.3s ease-out forwards;
+      min-width: 250px;
+    }
+
+    .flash-msg.error {
+      border-color: #ff3333;
+      background: rgba(40, 0, 0, 0.9);
+    }
+
+    .flash-msg.success {
+      border-color: #00ff00;
+      background: rgba(0, 40, 0, 0.9);
+    }
+
+    @keyframes slideInFlash {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes fadeOutFlash {
+      to {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+    }
   </style>
 </head>
 
 <body>
 
+  <div id="flash-container"></div>
   <div class="login-card">
     <h1>LOG IN</h1>
     <div class="subtitle">Secure Terminal Access</div>
@@ -196,27 +248,37 @@
     </div>
 
     <button onclick="submitForm()" class="btn-main">INITIATE LINK</button>
-    <div id="error-msg"></div>
 
     <div class="link-text">
       New Recruit? <a href="register.html">REGISTER HERE</a>
     </div>
   </div>
 
-  <script>
-    const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+  <script type="module">
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+    window.showFlash = function (message, type = 'error') {
+      const container = document.getElementById('flash-container');
+      const div = document.createElement('div');
+      div.className = `flash-msg ${type}`;
+      div.innerText = message;
+      container.appendChild(div);
+
+      setTimeout(() => {
+        div.style.animation = 'fadeOutFlash 0.5s ease-in forwards';
+        setTimeout(() => div.remove(), 500);
+      }, 3000);
+    };
 
     window.submitForm = async function () {
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
-      const errorDiv = document.getElementById('error-msg');
 
       if (!username || !password) {
-        errorDiv.innerText = 'CREDENTIALS REQUIRED';
+        showFlash('USERNAME AND PASSWORD REQUIRED', 'error');
         return;
       }
 
-      errorDiv.innerText = 'CONNECTING...';
 
       try {
         const res = await fetch(`${API_URL}/api/login`, {
@@ -228,20 +290,32 @@
         const data = await res.json();
 
         if (!res.ok) {
-          errorDiv.innerText = data.error || 'ACCESS DENIED';
+          showFlash(data.error || 'ACCESS DENIED', 'error');
         } else {
           // Success
-          localStorage.setItem('userId', data.userId);
-          if (data.username) localStorage.setItem('username', data.username);
-          else localStorage.setItem('username', username);
+          showFlash('ACCESS GRANTED', 'success');
+          setTimeout(() => {
+            localStorage.setItem('userId', data.userId);
+            if (data.username) localStorage.setItem('username', data.username);
+            else localStorage.setItem('username', username);
 
-          window.location.href = 'home.html';
+            window.location.href = 'home.html';
+          }, 1000);
         }
       } catch (err) {
         console.error(err);
-        errorDiv.innerText = 'NETWORK FAILURE';
+        showFlash('NETWORK FAILURE', 'error');
       }
     }
+
+    // Allow Enter key to submit
+    document.addEventListener('DOMContentLoaded', function () {
+      document.getElementById('password').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+          submitForm();
+        }
+      });
+    });
   </script>
 </body>
 

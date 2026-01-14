@@ -1,0 +1,12 @@
+{
+    "$schema": "https://railway.app/railway.schema.json",
+    "services": {
+        "server": {
+            "source": "./server",
+            "healthcheck": "/api/login"
+        },
+        "client": {
+            "source": "./client"
+        }
+    }
+}

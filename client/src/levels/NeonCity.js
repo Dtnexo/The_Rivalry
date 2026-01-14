@@ -60,10 +60,10 @@ export class NeonCity {
         const w = 6, h = 0.5;
         const ang = Math.atan(2 / 8);
 
-        createMesh(w, h, rampLen, 0, 1, -10, concreteMat, -ang, 0, 0); // N
-        createMesh(w, h, rampLen, 0, 1, 10, concreteMat, ang, 0, 0);  // S
-        createMesh(rampLen, h, w, 10, 1, 0, concreteMat, 0, 0, ang);  // E
-        createMesh(rampLen, h, w, -10, 1, 0, concreteMat, 0, 0, -ang); // W
+        createMesh(w, h, rampLen, 0, 0.70, -10, concreteMat, -ang, 0, 0); // N
+        createMesh(w, h, rampLen, 0, 0.70, 10, concreteMat, ang, 0, 0);  // S
+        createMesh(rampLen, h, w, 10, 0.85, 0, concreteMat, 0, 0, ang);  // E
+        createMesh(rampLen, h, w, -10, 0.85, 0, concreteMat, 0, 0, -ang); // W
 
         // 3. Obstacles
         createMesh(4, 4, 4, -15, 2, -15, wallMat);
@@ -91,26 +91,7 @@ export class NeonCity {
         createMesh(1, 4, 20, -30, 2, 0, wallMat);
         createMesh(1, 4, 20, 30, 2, 0, wallMat);
 
-        // --- NEW WOODEN CRATES ---
-        const crateTex = this.createCrateTexture();
-        const crateMat = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.9, color: 0xaaaaff });
-
-        const addCrate = (x, y, z) => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), crateMat);
-            mesh.position.set(x, y, z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            this.scene.add(mesh);
-        }
-
-        addCrate(5, 0.5, 5);
-        addCrate(5, 0.5, 6);
-        addCrate(5, 1.5, 5.5);
-        addCrate(-8, 0.5, 2);
-        addCrate(-9, 0.5, 2.5);
-        addCrate(0, 0.5, -8);
-        addCrate(1, 0.5, -8);
-        addCrate(0.5, 1.5, -8);
+        // [REMOVED] Wooden Crates
 
         // Background City
         const glassMat = new THREE.MeshStandardMaterial({ color: 0xaaccff, roughness: 0.0, metalness: 0.9, transparent: true, opacity: 0.8 });
@@ -140,22 +121,6 @@ export class NeonCity {
         this.scene.add(ground);
     }
 
-    createCrateTexture() {
-        const div = document.createElement('canvas');
-        div.width = 64; div.height = 64;
-        const ctx = div.getContext('2d');
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(0, 0, 64, 64);
-        // Border
-        ctx.strokeStyle = '#5c3a1e';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(0, 0, 64, 64);
-        // Cross
-        ctx.beginPath();
-        ctx.moveTo(0, 0); ctx.lineTo(64, 64);
-        ctx.moveTo(64, 0); ctx.lineTo(0, 64);
-        ctx.stroke();
-        return new THREE.CanvasTexture(div);
-    }
+    // [REMOVED] createCrateTexture
 }
 
