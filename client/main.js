@@ -13,7 +13,7 @@ import { NeonCity } from './src/levels/NeonCity.js';
 import { createWeaponMesh } from './src/utils/weapons.js';
 
 // --- CONFIG ---
-const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const SERVER_URL = import.meta.env.VITE_API_URL || ''; // Default to same origin for monorepo
 const TICK_RATE = 60;
 
 // --- STATE ---

@@ -6,6 +6,11 @@ import express from 'express';
 import cors from 'cors';
 import { Sequelize } from 'sequelize';
 import bcrypt from 'bcrypt';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -120,6 +125,17 @@ app.post('/api/login', async (req, res) => {
         console.error("Login Error", err);
         res.status(500).json({ error: 'Server error' });
     }
+});
+
+// --- SERVE STATIC FILES ---
+const clientDistPath = path.join(__dirname, '../client/dist');
+app.use(express.static(clientDistPath));
+
+// Catch-all handle for SPA
+app.get('*', (req, res, next) => {
+    // If it's an API route, don't serve index.html
+    if (req.url.startsWith('/api')) return next();
+    res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
 // --- PHYSICS WORLD SETUP ---
