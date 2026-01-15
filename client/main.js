@@ -665,6 +665,14 @@ socket.on('shoot', (data) => {
         // [FIX] Only show damage numbers if WE dealt the damage
         const damageToShow = (data.id === myFunctionId) ? data.damage : 0;
         createBulletProjectile(startPos, end, data.hitId, damageToShow, data.zone);
+
+        // [NEW] Damage Direction Indicator for Victim
+        if (data.hitId === myFunctionId) {
+            // Calculate direction to shooter
+            // Shooter pos: startPos (approx)
+            // My Pos: camera.position
+            createDamageIndicator(startPos);
+        }
     }
 });
 
@@ -776,6 +784,74 @@ function createDamageNumber(pos, dmg, zone) {
             div.remove();
         }
     }, 16);
+}
+
+// [DEBUG] Test Helper
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'p') {
+        console.log('Testing Damage Indicator from P key');
+        // Fake source 10 units to the right
+        const rightSource = camera.position.clone().add(new THREE.Vector3(10, 0, 0));
+        createDamageIndicator(rightSource);
+    }
+});
+
+// [NEW] Damage Indicator Logic
+function createDamageIndicator(sourcePos) {
+    console.log('createDamageIndicator called with source:', sourcePos);
+    const container = document.getElementById('damage-indicator-container');
+    if (!container) {
+        console.error('Damage Indicator Container not found!');
+        return;
+    }
+
+    // 1. Get Camera Direction (Forward)
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    camDir.y = 0; // Flatten to XZ plane
+    camDir.normalize();
+
+    // 2. Get Vector to Source
+    const toSource = new THREE.Vector3().subVectors(sourcePos, camera.position);
+    toSource.y = 0; // Flatten
+    toSource.normalize();
+
+    // 3. Calculate Angle
+    // Robust Method: Convert both to angles relative to North (-Z)
+    const camAngle = Math.atan2(camDir.x, camDir.z);
+    const sourceAngle = Math.atan2(toSource.x, toSource.z);
+
+    // Relative Angle for CSS Rotation
+    // We want the indicator to point TOWARDS the source.
+    // CSS 0deg = Up (12 o'clock).
+    // If Source is Forward (-Z), Cam Forward (-Z). Delta = 0.
+    // If Source is Right (+X), Cam Forward (-Z).
+    // camAngle = 180 (or -180). sourceAngle = 90.
+    // We want CSS +90 (Right).
+    // (180 - 90) = 90. Correct.
+    // Let's verify Left (-X).
+    // sourceAngle = -90.
+    // (180 - (-90)) = 270 = -90. Correct (Left).
+    // Let's verify Back (+Z). Source (0, 1). Angle 0.
+    // (180 - 0) = 180. Back. Correct.
+
+    const correctDeg = (camAngle - sourceAngle) * (180 / Math.PI);
+    console.log(`Damage Math: CamAngle=${camAngle}, SourceAngle=${sourceAngle}, Deg=${correctDeg}`);
+
+    const el = document.createElement('div');
+    el.className = 'damage-indicator';
+    el.style.setProperty('--angle', `${correctDeg}deg`);
+
+    const arc = document.createElement('div');
+    arc.className = 'damage-arc';
+    el.appendChild(arc);
+
+    container.appendChild(el);
+
+    // Auto remove handled by CSS animation + timeout
+    setTimeout(() => {
+        el.remove();
+    }, 1500);
 }
 
 socket.on('snapshot', (snapshot) => {
@@ -921,19 +997,20 @@ socket.on('death', (data) => {
     const victimName = data.victimName || players[data.id]?.username || 'Player';
 
     // Weapon icons
+    // Weapon icons
     const weaponIcons = {
-        'rifle': '🔫',
-        'sniper': '🎯',
-        'shotgun': '💥'
+        'rifle': '/assets/icons/rifle.png',
+        'sniper': '/assets/icons/sniper.png',
+        'shotgun': '/assets/icons/shotgun.png'
     };
-    const weaponIcon = weaponIcons[data.killerWeapon] || '⚔️';
+    const weaponCurrent = weaponIcons[data.killerWeapon] || weaponIcons['rifle']; // Fallback
 
     // Add entry to kill feed (visible to everyone)
     const entry = document.createElement('div');
     entry.className = 'kill-entry';
     entry.innerHTML = `
         <span class="killer">${data.killerName}</span>
-        <span class="weapon-icon">${weaponIcon}</span>
+        <img src="${weaponCurrent}" class="weapon-icon" />
         <span class="victim">${victimName}</span>
     `;
     killFeed.insertBefore(entry, killFeed.firstChild);

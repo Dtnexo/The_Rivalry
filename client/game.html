@@ -430,9 +430,15 @@
         }
 
         .kill-entry .weapon-icon {
-            font-size: 1.5rem;
-            filter: drop-shadow(0 0 8px rgba(255, 165, 0, 1));
+            /* font-size: 1.5rem; Removed for image */
+            height: 32px;
+            /* Adjust as needed */
+            width: auto;
+            display: inline-block;
+            filter: drop-shadow(0 0 5px rgba(255, 165, 0, 0.8));
             animation: iconPulse 2s ease-in-out infinite;
+            vertical-align: middle;
+            /* Align with text */
         }
 
         @keyframes iconPulse {
@@ -568,6 +574,75 @@
             box-shadow: 0 0 5px red;
             z-index: 100;
         }
+
+        /* DAMAGE INDICATOR */
+        #damage-indicator-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 0;
+            height: 0;
+            overflow: visible;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .damage-indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 300px;
+            height: 300px;
+            margin-top: -150px;
+            margin-left: -150px;
+            transform-origin: center;
+            pointer-events: none;
+            opacity: 0;
+            animation: fadeDamage 1.5s ease-out forwards;
+        }
+
+        .damage-arc {
+            position: absolute;
+            top: -150px;
+            /* Offset to radius */
+            left: -50px;
+            /* Center horizontally */
+            width: 100px;
+            height: 50px;
+            border-top: 8px solid rgba(255, 0, 0, 0.8);
+            border-radius: 100px 100px 0 0;
+            box-shadow: 0 -5px 15px rgba(255, 0, 0, 0.6);
+            /* Triangle/Arrow part */
+        }
+
+        .damage-arc::after {
+            content: '';
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 15px solid rgba(255, 0, 0, 0.8);
+        }
+
+        @keyframes fadeDamage {
+            0% {
+                opacity: 1;
+                transform: scale(1) rotate(var(--angle));
+            }
+
+            10% {
+                opacity: 1;
+                transform: scale(1.1) rotate(var(--angle));
+            }
+
+            100% {
+                opacity: 0;
+                transform: scale(1.2) rotate(var(--angle));
+            }
+        }
     </style>
     <script>
         // Auth Check
@@ -578,6 +653,7 @@
 </head>
 
 <body>
+    <div id="damage-indicator-container"></div>
     <div id="crosshair"></div>
     <div id="sniper-scope">
         <div class="scope-dot"></div>
