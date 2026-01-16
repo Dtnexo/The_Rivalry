@@ -268,7 +268,7 @@ createBody(containerShape, 15, 1.5, -25, 0, 0, 0.1, 0);
 // --- GAME STATE ---
 const players = {};
 const persistentStates = {}; // [NEW] Store state by userId { userId: { x, y, z, hp, ammo, weapon } }
-const TICK_RATE = 60;
+const TICK_RATE = 30;
 const HERO_STATS = {
     vanguard: { hp: 150, speed: 12, radius: 1 },
     shadow: { hp: 100, speed: 14, radius: 0.8 },
@@ -471,6 +471,187 @@ io.on('connection', (socket) => {
             players[socket.id].hp = HERO_STATS[newRole].hp;
         }
     });
+
+    // [NEW] WEAPON SWITCH
+    socket.on('switch_weapon', (newWeapon) => {
+        const p = players[socket.id];
+        if (p && WEAPON_STATS[newWeapon] || newWeapon === 'knife') {
+            p.weapon = newWeapon;
+            // Reset ammo for new weapon or keep? 
+            // Usually switch implies grabbing that gun.
+            // If knife, ammo irrelevant (or infinite).
+            if (WEAPON_STATS[newWeapon]) {
+                p.ammo = Math.min(p.ammo, WEAPON_STATS[newWeapon].ammo); // Or full reset? 
+                // Let's just reset to max for simplicity or keep it if shared?
+                // For now, reset to max is easiest/standard for arcade shooters unless we track per weapon.
+                p.ammo = WEAPON_STATS[newWeapon].ammo;
+            } else {
+                // Knife
+                p.ammo = 0;
+            }
+        }
+    });
+
+    // [NEW] MELEE ATTACK HANDLER
+    socket.on('melee_attack', (data) => {
+        const p = players[socket.id];
+        if (!p || p.isDead) return;
+
+        const now = Date.now();
+        const cooldown = data.type === 'heavy' ? 1000 : 400;
+        if (now - p.lastShootTime < cooldown) return;
+
+        p.lastShootTime = now;
+
+        const range = 4.0;
+        const viewDir = p.inputs.viewDir;
+        if (!viewDir) return;
+
+        const myPos = p.body.position;
+        const lookDir = new CANNON.Vec3(viewDir.x, viewDir.y, viewDir.z).unit();
+
+        let bestHitId = null;
+        let minDist = range;
+        let damage = 0;
+        let isBackstab = false;
+        let hitId = null;
+
+        // Iterate all players to find closest in cone
+        for (const pid in players) {
+            if (pid === p.id || players[pid].isDead) continue;
+
+            const target = players[pid];
+            const tPos = target.body.position;
+
+            // 1. Distance Check
+            const dist = myPos.distanceTo(tPos);
+            if (dist > range) continue;
+
+            // 2. Angle Check (Are we looking at them?)
+            const toTarget = tPos.vsub(myPos);
+            toTarget.y = 0;
+            toTarget.normalize();
+
+            const lookFlat = new CANNON.Vec3(lookDir.x, 0, lookDir.z).unit();
+            const angleDot = lookFlat.dot(toTarget);
+
+            // Dot > 0.5 means within ~60 degrees
+            if (angleDot > 0.5) {
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestHitId = pid;
+                }
+            }
+        }
+
+        if (bestHitId) {
+            const victim = players[bestHitId];
+            console.log(`[Melee] Hit Player: ${victim.username} Dist: ${minDist.toFixed(2)}`);
+
+            if (data.type === 'light') {
+                damage = 35;
+            } else {
+                damage = 75; // Heavy
+
+                // Backstab Logic
+                if (victim.inputs && victim.inputs.viewDir) {
+                    const vDir = new CANNON.Vec3(victim.inputs.viewDir.x, 0, victim.inputs.viewDir.z).unit();
+                    const aDir = new CANNON.Vec3(lookDir.x, 0, lookDir.z).unit();
+
+                    const facingDot = vDir.dot(aDir);
+
+                    // [NEW] Check Aim Precision (Must aim at Neck/Head)
+                    const eyePos = new CANNON.Vec3(p.body.position.x, p.body.position.y + 1.6, p.body.position.z);
+                    // Match visual head height (Collider is roughly centered, +1.6 is eye level)
+                    const targetHeadPos = new CANNON.Vec3(victim.body.position.x, victim.body.position.y + 1.6, victim.body.position.z);
+                    const dirToHead = targetHeadPos.vsub(eyePos).unit();
+                    const aimDot = lookDir.dot(dirToHead);
+
+                    console.log(`[Melee] Debug - Facing: ${facingDot.toFixed(2)}, Aim: ${aimDot.toFixed(2)}`);
+
+                    // 1. Behind (> 0.2 means within ~80 degrees of their back - very generous)
+                    // 2. Aiming at Head (> 0.85 means within ~30 degrees of precise head vector)
+                    if (facingDot > 0.2 && aimDot > 0.85) {
+                        damage = 200;
+                        isBackstab = true;
+                        console.log(`[Combat] Perfect Backstab! ${p.username} -> ${victim.username}`);
+                    } else {
+                        // Fallback
+                        if (facingDot > 0.2) console.log(`[Combat] Backstab miss (Bad Aim: ${aimDot.toFixed(2)})`);
+                    }
+                }
+            }
+
+            victim.hp -= damage;
+            hitId = bestHitId;
+
+            // [NEW] DEATH LOGIC FOR MELEE
+            if (victim.hp <= 0 && !victim.isDead) {
+                victim.hp = 0;
+                victim.isDead = true;
+
+                // Disable collision
+                victim.body.collisionFilterGroup = 0;
+                victim.body.collisionFilterMask = 0;
+
+                const spawnInfo = getRandomSpawn(victim.lastSpawnIndex);
+                victim.nextSpawn = spawnInfo;
+                victim.lastSpawnIndex = spawnInfo.index;
+
+                const victimUsername = victim.username;
+                console.log('[Death] Melee Kill:', p.username, '->', victimUsername);
+
+                io.emit('death', {
+                    id: victim.id,
+                    x: victim.body.position.x,
+                    y: victim.body.position.y,
+                    z: victim.body.position.z,
+                    victimName: victimUsername,
+                    killerName: p.username,
+                    killerWeapon: 'knife',
+                    respawnTime: 3,
+                    nextSpawn: spawnInfo
+                });
+
+                // Leaderboard Update
+                if (p.userId) {
+                    User.increment('kills_neon', { where: { id: p.userId } })
+                        .then(() => {
+                            broadcastLeaderboard();
+                        }).catch(e => console.error(e));
+                }
+
+                // Respawn Timer
+                setTimeout(() => {
+                    if (players[victim.id]) {
+                        const respawn = players[victim.id].nextSpawn;
+                        if (respawn) {
+                            players[victim.id].body.position.set(respawn.x, 3, respawn.z);
+                            players[victim.id].body.velocity.set(0, 0, 0);
+                        }
+                        players[victim.id].body.collisionFilterGroup = 2;
+                        players[victim.id].body.collisionFilterMask = 1 | 2;
+
+                        players[victim.id].hp = HERO_STATS[players[victim.id].role].hp;
+                        // For knife kills, what weapon they respawn with? Their selected one.
+                        players[victim.id].ammo = WEAPON_STATS[players[victim.id].weapon] ? WEAPON_STATS[players[victim.id].weapon].ammo : 30;
+                        players[victim.id].isDead = false;
+                        delete players[victim.id].nextSpawn;
+                    }
+                }, 3000);
+            }
+        } else {
+            console.log('[Melee] Missed (No target in cone).');
+        }
+
+        io.emit('melee_action', {
+            attackerId: p.id,
+            type: data.type,
+            hitId: hitId,
+            damage: damage,
+            isBackstab: isBackstab
+        });
+    });
 });
 
 // [NEW] Leaderboard Broadcast Function
@@ -612,7 +793,8 @@ function gameLoop() {
         // --- RELOAD LOGIC ---
         const weaponStats = WEAPON_STATS[p.weapon] || WEAPON_STATS.rifle;
 
-        if (inputs.reload && !p.isReloading && p.ammo < weaponStats.ammo) {
+        // [FIX] No reload for knife
+        if (p.weapon !== 'knife' && inputs.reload && !p.isReloading && p.ammo < weaponStats.ammo) {
             p.isReloading = true;
             p.reloadEndTime = now + weaponStats.reload;
             io.emit('reload_start', { id: p.id, duration: weaponStats.reload });

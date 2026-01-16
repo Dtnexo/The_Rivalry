@@ -106,6 +106,35 @@ export function createWeaponMesh(type) {
         const pump = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.2), darkMat);
         pump.position.set(0, -0.02, 0.3);
         group.add(pump);
+    } else if (type === 'knife') {
+        // --- KNIFE ---
+        // Handle
+        const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.15), darkMat);
+        handle.rotation.x = 0;
+        // Grip angle? Standard knife held point forward
+        group.add(handle);
+
+        // Guard
+        const guard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.02), steelMat);
+        guard.position.z = 0.08;
+        group.add(guard);
+
+        // Blade
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.25), steelMat);
+        blade.position.z = 0.22;
+        // Make it sharp (scale y at tip?)
+        // Simple shape for now
+        group.add(blade);
+
+        // Rotate group to hold like a knife (Forward)
+        // Default FPS hold is usually: Arm down, Weapon forward.
+        // We might need to adjust rotation in main.js or here.
+        // Let's assume standard alignment (-Z forward).
+        // Current setup: +Z seems to be forward for components based on other guns?
+        // Rifle Barrel z=0.4.
+        // So +Z is forward in this local space.
+        // But main.js rotates PI to face -Z.
+
     } else {
         // Fallback cube
         const cube = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), darkMat);

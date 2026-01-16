@@ -11,15 +11,49 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 // Modular Level
 import { NeonCity } from './src/levels/NeonCity.js';
 import { createWeaponMesh } from './src/utils/weapons.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js'; // [NEW] Switch to STL
 
 // --- CONFIG ---
 const SERVER_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
-const TICK_RATE = 60;
+const TICK_RATE = 30;
 
 // --- STATE ---
 const players = {};
 let myFunctionId = null;
 const projectiles = []; // Store active projectiles
+const activeParticles = []; // [NEW] Shared particle system
+let globalCamoTexture = null; // [NEW] Cache texture
+
+function getCamoTexture() {
+    if (globalCamoTexture) return globalCamoTexture;
+
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    // Base
+    ctx.fillStyle = '#4b5320'; // Army Green
+    ctx.fillRect(0, 0, size, size);
+
+    // Random Digital Patches
+    const colors = ['#3d3415', '#6b8c42', '#2f3118']; // Brown, Light Green, Darker
+    for (let i = 0; i < 400; i++) {
+        ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+        const w = Math.random() * 20 + 5;
+        const h = Math.random() * 20 + 5;
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        ctx.fillRect(x, y, w, h);
+    }
+
+    globalCamoTexture = new THREE.CanvasTexture(canvas);
+    globalCamoTexture.magFilter = THREE.NearestFilter;
+    return globalCamoTexture;
+}
 
 // --- NETWORK SETUP ---
 const userId = localStorage.getItem('userId');
@@ -51,10 +85,11 @@ const camera = new THREE.PerspectiveCamera(
 camera.layers.enable(0);
 scene.add(camera); // [FIX] Ensure camera is in scene so its children (FPS Weapon) render
 
-const renderer = new THREE.WebGLRenderer({ antialias: false }); // Antialias false recommended for PostProcessing often
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" }); // [FIX] Sharpness + Perf
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // [FIX] Sharpness
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // [FIX] Faster Shadows (was PCFSoft)
 renderer.toneMapping = THREE.ReinhardToneMapping;
 renderer.toneMappingExposure = 1.5;
 document.body.appendChild(renderer.domElement);
@@ -154,32 +189,7 @@ function createPlayerMesh(role, weaponType) {
     group.castShadow = true;
 
     // --- TEXTURES ---
-    function createCamoTexture() {
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-
-        // Base
-        ctx.fillStyle = '#4b5320'; // Army Green
-        ctx.fillRect(0, 0, size, size);
-
-        // Random Digital Patches
-        const colors = ['#3d3415', '#6b8c42', '#2f3118']; // Brown, Light Green, Darker
-        for (let i = 0; i < 400; i++) {
-            ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-            const w = Math.random() * 20 + 5;
-            const h = Math.random() * 20 + 5;
-            const x = Math.random() * size;
-            const y = Math.random() * size;
-            ctx.fillRect(x, y, w, h);
-        }
-
-        return new THREE.CanvasTexture(canvas);
-    }
-    const camoTexture = createCamoTexture();
-    camoTexture.magFilter = THREE.NearestFilter; // Pixelated look
+    const camoTexture = getCamoTexture(); // [FIX] Use cached
 
     // Common materials
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
@@ -294,8 +304,12 @@ function createPlayerMesh(role, weaponType) {
     group.add(rightShoulder);
 
     const rightArm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, armD), mainMat);
+    rightArm.name = 'rightArm'; // [FIX] Name it for lookups
     rightArm.position.set(0, -0.4, 0); // Offset so pivot is at top
     rightShoulder.add(rightArm);
+
+    // [FIX] Removed duplicate weapon creation block here.
+    // The correct weapon attachment happens below in the "TPV" section.
 
     // --- AIM POSE (Two-Handed) ---
     // Right Arm (Holding Grip)
@@ -348,7 +362,7 @@ function createPlayerMesh(role, weaponType) {
     return group;
 }
 
-// [NEW] Visual Effects: Giblets (Body Parts)
+// [NEW] Visual Effects: Giblets (Body Parts) - Optimized
 function createGiblets(pos) {
     const debrisCount = 12;
     const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5); // Chunks
@@ -372,28 +386,14 @@ function createGiblets(pos) {
 
         scene.add(mesh);
 
-        // Animate
-        const duration = 2000; // 2s
-        const startTime = Date.now();
-
-        const tick = () => {
-            const now = Date.now();
-            const elapsed = now - startTime;
-            if (elapsed > duration) {
-                scene.remove(mesh);
-                return;
-            }
-
-            // Gravity loop for this particle
-            // Note: Cleaner to use a global particle system list, but this is ok for low count events
-            mesh.position.add(velocity.clone().multiplyScalar(0.016)); // ~60fps step
-            velocity.y -= 9.8 * 0.016; // Gravity
-            mesh.rotation.x += 0.1;
-            mesh.rotation.z += 0.1;
-
-            requestAnimationFrame(tick);
-        };
-        tick();
+        // Add to global system
+        activeParticles.push({
+            mesh: mesh,
+            velocity: velocity,
+            startTime: Date.now(),
+            duration: 2000,
+            rotVel: { x: 0.1, z: 0.1 }
+        });
     }
 }
 
@@ -635,10 +635,16 @@ socket.on('shoot', (data) => {
         const fpsWeapon = camera.getObjectByName('fpsWeapon');
         if (fpsWeapon) {
             camera.updateMatrixWorld(true);
-            const type = localStorage.getItem('selectedWeapon') || 'rifle';
+
+            // Determine type based on slot
+            let type = localStorage.getItem('selectedWeapon') || 'rifle';
+            if (currentSlot === 1) type = 'knife';
+
             let zOffset = 0.6;
             if (type === 'sniper') zOffset = 1.25;
             if (type === 'shotgun') zOffset = 0.75;
+            if (type === 'knife') zOffset = 0.3; // Short range
+
             const muzzleLocal = new THREE.Vector3(0, 0.05, zOffset);
             startPos = muzzleLocal.applyMatrix4(fpsWeapon.matrixWorld);
         }
@@ -878,41 +884,137 @@ socket.on('snapshot', (snapshot) => {
             players[pData.id] = {
                 mesh: mesh,
                 nameplate: nameplate,
-                id: pData.id
+                id: pData.id,
+                // [NEW] Interpolation Targets
+                targetPos: new THREE.Vector3(pData.x, pData.y, pData.z),
+                targetRot: pData.ry, // Body Y
+                targetHeadRot: 0 // Head Pitch
             };
         }
 
         const p = players[pData.id];
 
         // [NEW] Walking Animation Logic
-        const dx = pData.x - p.mesh.position.x;
-        const dz = pData.z - p.mesh.position.z;
-        const isMoving = (dx * dx + dz * dz) > 0.001; // Movement Threshold
+        // Calculate speed based on target delta, not raw snap
+        const dx = pData.x - p.targetPos.x;
+        const dz = pData.z - p.targetPos.z;
+        const isMoving = (dx * dx + dz * dz) > 0.001;
 
         if (isMoving) {
-            p.walkPhase = (p.walkPhase || 0) + 0.6; // Increment stride
-            const angle = Math.sin(p.walkPhase) * 0.5; // Swing amplitude
+            p.walkPhase = (p.walkPhase || 0) + 0.6;
+            const angle = Math.sin(p.walkPhase) * 0.5;
 
             const leftLeg = p.mesh.getObjectByName('leftLeg');
             const rightLeg = p.mesh.getObjectByName('rightLeg');
             if (leftLeg) leftLeg.rotation.x = angle;
             if (rightLeg) rightLeg.rotation.x = -angle;
         } else {
-            // Reset to standing
             const leftLeg = p.mesh.getObjectByName('leftLeg');
             const rightLeg = p.mesh.getObjectByName('rightLeg');
             if (leftLeg) leftLeg.rotation.x = 0;
             if (rightLeg) rightLeg.rotation.x = 0;
         }
 
-        p.mesh.position.set(pData.x, pData.y, pData.z);
-        if (pData.ry !== undefined) {
-            p.mesh.rotation.y = pData.ry;
+        // [FIX] Interpolation: Update Targets ONLY (Don't set mesh pos directly)
+        p.targetPos.set(pData.x, pData.y, pData.z);
+        if (pData.ry !== undefined) p.targetRot = pData.ry;
+        if (pData.rx !== undefined) p.targetHeadRot = pData.rx;
+
+        // Sync other states immediately
+        p.ammo = pData.ammo;
+        p.isReloading = (pData.ammo === 0 && !pData.isReloading) ? false : pData.isReloading;
+
+
+        // [NEW] Sync Weapon Change
+        // p.weapon is our local cache of what they had. pData.weapon is from server.
+        if (p.weapon !== pData.weapon) {
+            console.log(`[Sync] Player ${pData.username} switched to ${pData.weapon}`);
+            p.weapon = pData.weapon;
+
+            // Re-equip visual
+            // Currently weapons are 'simple box' attached to body or complex mesh?
+            // players[id].mesh structure:
+            // Group -> [Head, Body, Legs, Arms...]
+            // Weapon is usually attached to Right Arm or Body?
+            // [FIX] Recursive Removal of ALL old weapons
+            // Sometimes duplicates occur if 'rightArm' vs 'rightShoulder' confusion happens
+            let oldWeapon = p.mesh.getObjectByName('weapon');
+            while (oldWeapon) {
+                oldWeapon.parent.remove(oldWeapon);
+                oldWeapon = p.mesh.getObjectByName('weapon');
+            }
+
+            // Create new
+            let newWeaponMesh;
+            let isStlKnife = false;
+
+            if (pData.weapon === 'knife' && cachedKnifeGeometry) {
+                // Use Cached STL
+                const knifeMat = new THREE.MeshStandardMaterial({
+                    color: 0x333333,
+                    roughness: 0.4,
+                    metalness: 0.8,
+                    side: THREE.DoubleSide
+                });
+                newWeaponMesh = new THREE.Mesh(cachedKnifeGeometry, knifeMat);
+                isStlKnife = true;
+                console.log('[Sync] Spawning Remote Knife (STL)');
+            } else {
+                // Fallback / Standard
+                newWeaponMesh = createWeaponMesh(pData.weapon);
+
+                // Trigger Load if needed
+                if (pData.weapon === 'knife' && !cachedKnifeGeometry) {
+                    console.log('[Sync] Triggering Knife Load for Remote...');
+                    const loader = new STLLoader();
+                    loader.load('/model/Knife/Knife.stl', (geo) => {
+                        geo.center();
+                        cachedKnifeGeometry = geo;
+                        console.log('[Sync] Knife Loaded via Remote trigger.');
+                        // Just let next update cycle fix it or leave placeholder for now
+                    });
+                }
+            }
+
+            newWeaponMesh.name = 'weapon';
+
+            // Attach to Right Arm (Hand)
+            let parent = p.mesh.getObjectByName('rightArm');
+            if (parent) {
+                newWeaponMesh.position.set(0, -0.8, 0); // Hand
+            } else {
+                parent = p.mesh.getObjectByName('rightShoulder');
+                if (parent) {
+                    newWeaponMesh.position.set(0, -0.8, 0.5);
+                } else {
+                    parent = p.mesh;
+                    newWeaponMesh.position.set(0.4, 0.8, 0.4);
+                }
+            }
+
+            // Scale & Rotation Adjustment
+            if (isStlKnife) {
+                // STL Scale
+                newWeaponMesh.scale.set(0.12, 0.12, 0.12);
+                // [FIX] Rotate X -90 to point "Up" (Sky)
+                // Assuming Parent System: Z=Down, Y=Forward, X=Right (based on Rifle alignment)
+                // Knife Native: Y=Up (Blade)
+                // Goal: Blade to -Z (Up relative to ground?)
+                newWeaponMesh.rotation.set(-Math.PI / 2, 6.1, 0);
+            } else if (pData.weapon === 'knife') {
+                // Procedural Fallback
+                newWeaponMesh.scale.set(0.12, 0.12, 0.12);
+                newWeaponMesh.rotation.set(-Math.PI / 2, 0, 0); // Match STL
+            } else {
+                // Guns
+                newWeaponMesh.scale.set(1, 1, 1);
+                newWeaponMesh.rotation.set(Math.PI / 2, 0, Math.PI); // Keep Rifle Aiming Forward
+            }
+
+            if (parent) parent.add(newWeaponMesh);
         }
 
-        // [FIX] Sync Ammo from Server Snapshot
-        p.ammo = pData.ammo;
-        p.isReloading = (pData.ammo === 0 && !pData.isReloading) ? false : pData.isReloading; // Basic sync, actual logic handled by events but good to have
+        // Update Nameplate Logic
 
         // Update Nameplate Logic
         updateNameplate(p.nameplate, pData.username || 'Agent', pData.hp, 150);
@@ -935,7 +1037,14 @@ socket.on('snapshot', (snapshot) => {
         if (pData.id === myFunctionId) {
             // My Logic
             if (!pData.isDead) { // Only update camera if alive
-                camera.position.set(pData.x, pData.y + 1.6, pData.z);
+                // [FIX] Update Target only
+                if (isFirstSpawn) {
+                    camera.position.set(pData.x, pData.y + 1.6, pData.z);
+                    targetCamPos.set(pData.x, pData.y + 1.6, pData.z);
+                    isFirstSpawn = false;
+                } else {
+                    targetCamPos.set(pData.x, pData.y + 1.6, pData.z);
+                }
             }
 
             // Update HUD (Health & Ammo)
@@ -966,20 +1075,7 @@ socket.on('snapshot', (snapshot) => {
             }
 
         } else {
-            // [NEW] Sync Aim Pitch (rx) for Remote Players
-            if (p.mesh && pData.rx !== undefined) {
-                const shoulder = p.mesh.getObjectByName('rightShoulder');
-                if (shoulder) {
-                    // Base is PI/2 (Forward). rx is UP(neg)/DOWN(pos).
-                    // PI/2 - rx -> UP adds angle (back), DOWN reduces angle (fwd/down? wait)
-                    // Logic verified: UP(-rx) -> PI/2 - (-val) = INCREASE. Good.
-                    shoulder.rotation.x = (Math.PI / 2) - pData.rx;
-                }
-                const head = p.mesh.getObjectByName('head');
-                if (head) {
-                    head.rotation.x = -pData.rx;
-                }
-            }
+            // [NEW] Sync Aim Pitch (rx) for Remote Players is handled in LERP loop now
         }
     });
 
@@ -1066,10 +1162,66 @@ window.addEventListener('keyup', (e) => {
     if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false;
 });
 
-// Prevent Context Menu on Right Click
-window.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-}, false);
+// Button Listeners
+window.addEventListener('mousedown', (e) => {
+    if (controls.isLocked) {
+        if (e.button === 0) keys.mouseLeft = true;
+        if (e.button === 2) keys.mouseRight = true;
+    }
+});
+window.addEventListener('mouseup', (e) => {
+    if (e.button === 0) {
+        keys.mouseLeft = false;
+        keys.mouseLeftProcessed = false; // Reset lock
+    }
+    if (e.button === 2) keys.mouseRight = false;
+});
+
+// [NEW] Weapon Switching Input
+window.addEventListener('keydown', (e) => {
+    if (!controls.isLocked) return;
+
+    // Slot 1: Knife
+    if (e.key === '1') {
+        if (currentSlot !== 1) {
+            currentSlot = 1;
+            showInventoryNotification('KNIFE');
+            attachFPSWeapon();
+            socket.emit('switch_weapon', 'knife');
+        }
+    }
+    // Slot 2: Primary
+    else if (e.key === '2') {
+        if (currentSlot !== 2) {
+            currentSlot = 2;
+            const primary = localStorage.getItem('selectedWeapon') || 'rifle';
+            showInventoryNotification(primary.toUpperCase());
+            attachFPSWeapon();
+            socket.emit('switch_weapon', primary);
+        }
+    }
+});
+
+function showInventoryNotification(text) {
+    let el = document.getElementById('inv-notify');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'inv-notify';
+        Object.assign(el.style, {
+            position: 'absolute', bottom: '100px', right: '20px',
+            color: '#00ffff', fontFamily: "'Orbitron', sans-serif", fontSize: '24px',
+            textShadow: '0 0 10px #00ffff', opacity: '0', transition: 'opacity 0.5s'
+        });
+        document.body.appendChild(el);
+    }
+    el.innerText = text;
+    el.style.opacity = '1';
+
+    // Fade out
+    setTimeout(() => {
+        el.style.opacity = '0';
+    }, 1500);
+}
 
 setInterval(() => {
     if (!myFunctionId) return;
@@ -1104,9 +1256,10 @@ setInterval(() => {
         }
 
         // --- SNIPER LOGIC (Inaccuracy + Scop Sensitivity) ---
-        const weaponName = localStorage.getItem('selectedWeapon') || 'rifle';
-        // [FIX] Block aiming if reloading
-        const isAiming = keys.mouseRight && !amIReloading;
+        const weaponName = (currentSlot === 1) ? 'knife' : (localStorage.getItem('selectedWeapon') || 'rifle');
+
+        // [FIX] Block aiming if reloading OR if holding Knife
+        const isAiming = keys.mouseRight && !amIReloading && weaponName !== 'knife';
 
         // 1. Sensitivity
         if (isAiming) {
@@ -1124,6 +1277,19 @@ setInterval(() => {
             camDir.y += (Math.random() - 0.5) * jitter;
             camDir.z += (Math.random() - 0.5) * jitter;
             camDir.normalize();
+        }
+
+        // [NEW] KNIFE INPUT LOGIC
+        if (currentSlot === 1) {
+            shouldShoot = false; // Never "shoot" via standard input event
+
+            const now = Date.now();
+            if (keys.mouseLeft && (now - lastMeleeTime > 500)) {
+                performMeleeAttack('light');
+                keys.mouseLeftProcessed = true; // Prevent spam?
+            } else if (keys.mouseRight && (now - lastMeleeTime > 1200)) {
+                performMeleeAttack('heavy');
+            }
         }
 
         const inputKey = {
@@ -1177,21 +1343,239 @@ setInterval(() => {
 let isAimingGlobal = false;
 let targetFovGlobal = 75; // Default
 let amIReloading = false; // [NEW] Track reload state
+let targetCamPos = new THREE.Vector3(); // [NEW] Local Interpolation Target
+let isFirstSpawn = true; // [NEW] Snap on first spawn
+
+// [NEW] KNIFE SYSTEMS
+let lastMeleeTime = 0;
+let isAttacking = false;
+
+function performMeleeAttack(type) {
+    lastMeleeTime = Date.now();
+
+    // 1. Local Animation
+    animateKnifeSwing(type);
+
+    // 2. Network Event
+    socket.emit('melee_attack', { type: type });
+}
+
+function animateKnifeSwing(type) {
+    const fpsWeapon = camera.getObjectByName('fpsWeapon');
+    if (!fpsWeapon) return;
+
+    // Reset logic could be complex, simple procedural animation:
+    // We can use a global 'swingPhase' in animate(), or a one-off TWEEN-like interaction
+    // Let's use a simple CSS-based class or modify rotation via a temporary object we check in animate()
+
+    // Actually, let's inject a "swing" object into the weapon for the animate loop to pick up
+    fpsWeapon.userData.swinging = true;
+    fpsWeapon.userData.swingStart = Date.now();
+    fpsWeapon.userData.swingType = type; // 'light' or 'heavy'
+}
+
+// Handle Remote Melee Actions (Visuals/Sound)
+socket.on('melee_action', (data) => {
+    // data: { attackerId, type, hitId, damage }
+    if (data.attackerId === myFunctionId) {
+        // I hit someone
+        if (data.hitId) {
+            // Show Hitmarker?
+            // Already handled by createBulletProjectile logic usually, but we can reuse createDamageNumber
+            // Need position of victim.
+            const victim = players[data.hitId];
+            if (victim && victim.mesh) {
+                createDamageNumber(victim.mesh.position, data.damage, 'body');
+            }
+        }
+    } else {
+        // Someone else attacked
+        const attacker = players[data.attackerId];
+        if (attacker && attacker.mesh) {
+            // Play remote swing animation?
+            // Simple: Rotate their arm temporarily
+            playRemoteSwing(attacker.mesh, data.type);
+        }
+    }
+});
+
+function playRemoteSwing(mesh, type) {
+    const rightArm = mesh.getObjectByName('rightArm'); // The simplified player mesh might not have 'rightArm', it has 'rightShoulder'
+    const rotObj = mesh.getObjectByName('rightShoulder') || mesh;
+
+    // Simple visual cue: Flash color or rotate
+    const originalRot = rotObj.rotation.x;
+
+    // Quick down swing
+    let duration = type === 'heavy' ? 500 : 250;
+
+    // We can't blocking anim here. Just set a flag or run a quick interval.
+    // Interval for simplicity
+    let t = 0;
+    const interval = setInterval(() => {
+        t += 20;
+        const progress = t / duration;
+        if (progress >= 1) {
+            rotObj.rotation.x = originalRot; // Reset (roughly)
+            clearInterval(interval);
+            return;
+        }
+
+        // Swing logic: Up then Down
+        const phase = Math.sin(progress * Math.PI); // 0 -> 1 -> 0
+        rotObj.rotation.x = originalRot + (phase * 1.5);
+
+    }, 20);
+}
 
 // --- FPS WEAPON SETUP ---
+let currentWeaponType = localStorage.getItem('selectedWeapon') || 'rifle';
+// Track slots: 1 = Knife, 2 = Primary
+let currentSlot = 2; // Default to primary
+// [NEW] Geometry Cache
+let cachedKnifeGeometry = null;
+
 function attachFPSWeapon() {
     // Remove old if exists
     const old = camera.getObjectByName('fpsWeapon');
     if (old) camera.remove(old);
 
-    const selectedWeapon = localStorage.getItem('selectedWeapon') || 'rifle';
-    const weapon = createWeaponMesh(selectedWeapon);
+    // Determine weapon based on slot
+    let weaponToSpawn = currentWeaponType;
+    if (currentSlot === 1) {
+        weaponToSpawn = 'knife';
+    }
+
+    if (weaponToSpawn === 'knife') {
+
+        // Helper to build the rig once geometry is ready
+        const buildRig = (geometry) => {
+            // ... The existing rig building code ...
+            // We need to extract this logic to reuse it or just duplicate simple parts? 
+            // Ideally, refactor, but for 'Replace', I will inline or use a helper if possible.
+            // Since I can't easily refactor into a helper function outside without changing more code, 
+            // I will modify the flow to handle both Cached and Async paths.
+        };
+
+        // Actually, let's keep it simple:
+        // If cached, run logic immediately.
+        // If not, show loader.
+        const buildKnifeRig = (geometry) => {
+            if (currentSlot !== 1) return;
+            // geometry.center(); // Assumed already centered if cached? No, safe to call again or clone.
+            // basic centering might shift if called multiple times? 
+            // Better to clone geometry?
+            // geometry = geometry.clone(); 
+
+            // Main FPS Rig Group
+            const rigGroup = new THREE.Group();
+            rigGroup.name = 'fpsWeapon';
+
+            // Materials
+            const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xffccaa });
+            const knifeMat = new THREE.MeshStandardMaterial({
+                color: 0x333333,
+                roughness: 0.4,
+                metalness: 0.8,
+                side: THREE.DoubleSide
+            });
+
+            // Geometry Helpers
+            const armGeo = new THREE.BoxGeometry(0.15, 0.15, 0.6);
+            const handGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+
+            // --- RIGHT ARM ---
+            const rightArmGroup = new THREE.Group();
+            const rArmMesh = new THREE.Mesh(armGeo, sleeveMat);
+            rArmMesh.position.set(0, 0, 0.2);
+            const rHandMesh = new THREE.Mesh(handGeo, skinMat);
+            rHandMesh.position.set(0, 0, -0.15);
+
+            const knifeMesh = new THREE.Mesh(geometry, knifeMat);
+            knifeMesh.scale.set(0.06, 0.06, 0.06);
+            knifeMesh.rotation.set(0, -Math.PI / 11, 0);
+            knifeMesh.position.set(-0.08, 0.25, -0.2);
+
+            rightArmGroup.add(rArmMesh);
+            rightArmGroup.add(rHandMesh);
+            rightArmGroup.add(knifeMesh);
+            rightArmGroup.position.set(0.5, -0.5, -0.6);
+            rightArmGroup.rotation.set(0, 0.1, 0);
+
+            // --- LEFT ARM ---
+            const leftArmGroup = new THREE.Group();
+            const lArmMesh = new THREE.Mesh(armGeo, sleeveMat);
+            lArmMesh.position.set(0, 0, 0.2);
+            const lHandMesh = new THREE.Mesh(handGeo, skinMat);
+            lHandMesh.position.set(0, 0, -0.15);
+
+            leftArmGroup.add(lArmMesh);
+            leftArmGroup.add(lHandMesh);
+            leftArmGroup.position.set(-0.5, -0.5, -0.6);
+            leftArmGroup.rotation.set(0, -0.1, 0);
+
+            rigGroup.add(rightArmGroup);
+            rigGroup.add(leftArmGroup);
+            rigGroup.rotation.set(0, 0, 0);
+
+            camera.add(rigGroup);
+        };
+
+        if (cachedKnifeGeometry) {
+            // Instant Load
+            buildKnifeRig(cachedKnifeGeometry);
+        } else {
+            // First Time Load
+            // Placeholder
+            const loadingGeo = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+            const loadingMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true });
+            const loadingMesh = new THREE.Mesh(loadingGeo, loadingMat);
+            loadingMesh.position.set(0.35, -0.25, -0.6);
+            loadingMesh.name = 'fpsWeapon';
+            camera.add(loadingMesh);
+
+            const loader = new STLLoader();
+            loader.load('/model/Knife/Knife.stl', (geometry) => {
+                // Remove Placeholder
+                const placeholder = camera.getObjectByName('fpsWeapon');
+                if (placeholder) camera.remove(placeholder);
+
+                console.log('[Knife] Cached Geometry.');
+                geometry.center();
+                cachedKnifeGeometry = geometry; // Cache it!
+
+                buildKnifeRig(geometry);
+            }, undefined, (err) => {
+                console.error('Error loading knife STL:', err);
+                // Fallback
+                const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+                const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                const fallbackMesh = new THREE.Mesh(geometry, material);
+                fallbackMesh.position.set(0.5, -0.5, -0.6);
+                fallbackMesh.name = 'fpsWeapon';
+                camera.add(fallbackMesh);
+            });
+        }
+        return;
+    }
+
+    const weapon = createWeaponMesh(weaponToSpawn);
     weapon.name = 'fpsWeapon';
 
     // Position for FPS view (Right hand side, slightly forward)
     // [FIX] Moved UP and CLOSER clearly into view
     weapon.position.set(0.35, -0.25, -0.6);
     weapon.rotation.set(0, Math.PI, 0); // Face straight forward (-Z)
+
+    // Specific tweaks for Knife
+    if (weaponToSpawn === 'knife') {
+        weapon.position.set(0.35, -0.3, -0.4); // Closer
+        weapon.rotation.set(0, Math.PI, Math.PI / 2); // Rotated to look like held knife? 
+        // Actually, let's keep it simple first.
+        // Blade forward.
+        weapon.rotation.set(0, Math.PI, 0);
+    }
 
     // Scale
     weapon.scale.set(1, 1, 1); // Normal size
@@ -1201,6 +1585,24 @@ function attachFPSWeapon() {
 attachFPSWeapon();
 
 // --- INPUT LISTENERS ---
+window.addEventListener('keydown', (e) => {
+    // Weapon Switching
+    if (e.key === '1') {
+        if (currentSlot !== 1) {
+            currentSlot = 1;
+            attachFPSWeapon();
+            socket.emit('switch_weapon', 'knife'); // [NEW] Notify Server
+        }
+    }
+    if (e.key === '2') {
+        if (currentSlot !== 2) {
+            currentSlot = 2;
+            currentWeaponType = localStorage.getItem('selectedWeapon') || 'rifle'; // Refresh in case changed
+            attachFPSWeapon();
+            socket.emit('switch_weapon', currentWeaponType); // [NEW] Notify Server
+        }
+    }
+});
 window.addEventListener('mousedown', (e) => {
     if (controls.isLocked) {
         if (e.button === 0) keys.mouseLeft = true;
@@ -1210,7 +1612,7 @@ window.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => {
     if (e.button === 0) {
         keys.mouseLeft = false;
-        keys.mouseLeftProcessed = false; // Reset trigger
+        keys.mouseLeftProcessed = false;
     }
     if (e.button === 2) {
         keys.mouseRight = false;
@@ -1239,6 +1641,84 @@ function animate() {
         }
     }
 
+    // [NEW] Update Particles (Giblets)
+    for (let i = activeParticles.length - 1; i >= 0; i--) {
+        const p = activeParticles[i];
+        const now = Date.now();
+        if (now - p.startTime > p.duration) {
+            scene.remove(p.mesh);
+            activeParticles.splice(i, 1);
+            continue;
+        }
+
+        // Physics
+        p.velocity.y -= 9.8 * dt; // Gravity
+        p.mesh.position.addScaledVector(p.velocity, dt);
+        p.mesh.rotation.x += p.rotVel.x;
+        p.mesh.rotation.z += p.rotVel.z;
+    }
+
+    // [NEW] ANIMATE KNIFE SWING
+    const fpsWeapon = camera.getObjectByName('fpsWeapon');
+    if (fpsWeapon && fpsWeapon.userData.swinging) {
+        const now = Date.now();
+        const start = fpsWeapon.userData.swingStart;
+        const type = fpsWeapon.userData.swingType;
+        const duration = type === 'heavy' ? 400 : 150; // Heavy is slower
+
+        const progress = Math.min(1, (now - start) / duration);
+
+        // Anim Curves
+        // Light: Quick rotation Z/X
+        // Heavy: Big thrust forward + X rotation
+
+        if (type === 'light') {
+            const phase = Math.sin(progress * Math.PI); // 0 -> 1 -> 0
+            // Rotation Swing
+            // Original: 0, 0, 0 (roughly, relative to internal)
+            // Swing: Rotate X down, Z sideways
+            fpsWeapon.rotation.x = 0 + (phase * 0.5);
+            fpsWeapon.rotation.y = 0 + (phase * 0.5);
+            fpsWeapon.position.z = -0.6 - (phase * 0.2); // Thrust a bit? Wait, original pos is specific.
+            // Better to rely on relative rotation if possible.
+            // But we modified the Group's transform in attach(). 
+            // attach() set: rigGroup.position.set(0,0,0) (No, added to camera directly?)
+            // attach() set: handGroup.position.set(0.4, -0.4, -0.5); etc.
+            // Actually, `fpsWeapon` IS that group.
+            // Default Pos (Logic): (0.5, -0.5, -0.6) inside the knife block? 
+            // Wait, attachFPSWeapon() sets rigGroup as fpsWeapon.
+            // rigGroup doesn't have a set position?
+            // Yes: rigGroup.add(rightArm)... NO.
+            // rigGroup was 'camera.add(rigGroup)'.
+            // rigGroup contains rightArmGroup.
+            // rightArmGroup.position.set(0.5, -0.5, -0.6);
+
+            // If we rotate `fpsWeapon` (rigGroup), it rotates around camera origin (0,0,0).
+            // This acts like a "View Bob".
+            fpsWeapon.rotation.x = phase * 0.2;
+            fpsWeapon.rotation.z = -phase * 0.1;
+        } else {
+            // Heavy Stab
+            const phase = Math.sin(progress * Math.PI);
+            // Big lunge forward
+            // Careful, z is negative forward.
+            // fpsWeapon.position is (0,0,0) relative to camera initially? 
+            // We never set fpsWeapon.position in the NEW stl block!
+            // We set children positions.
+            // So fpsWeapon is at 0,0,0. Perfect.
+
+            fpsWeapon.position.z = -phase * 0.5; // Lunge 0.5 units forward
+            fpsWeapon.rotation.x = phase * 0.1;
+        }
+
+        if (progress >= 1) {
+            fpsWeapon.userData.swinging = false;
+            // Reset transforms
+            fpsWeapon.rotation.set(0, 0, 0);
+            fpsWeapon.position.set(0, 0, 0);
+        }
+    }
+
     renderer.render(scene, camera);
 
     // [FIX] Smooth FOV Interpolation (60fps+)
@@ -1250,6 +1730,50 @@ function animate() {
 
         camera.fov += (targetFovGlobal - camera.fov) * lerpFactor;
         camera.updateProjectionMatrix();
+    }
+
+    // [NEW] Interpolate Remote Players
+    const lerpSpeed = 10.0 * dt; // Adjust smoothness (10 is snappy but smooth)
+    for (const id in players) {
+        if (id === myFunctionId) continue; // Skip self (snapped)
+
+        const p = players[id];
+        if (p.mesh && p.targetPos) {
+            // Position Lerp
+            p.mesh.position.lerp(p.targetPos, lerpSpeed);
+
+            // Rotation Y (Body) Lerp (Shortest path?)
+            // Simple Lerp for now (Quaternion is better but Euler ok for Y)
+            // Fix wrap-around issue manually if needed, but for now simple approach:
+            if (p.targetRot !== undefined) {
+                // Basic lerp on float angle
+                p.mesh.rotation.y += (p.targetRot - p.mesh.rotation.y) * lerpSpeed;
+            }
+
+            // Head Pitch Lerp
+            if (p.targetHeadRot !== undefined) {
+                const shoulder = p.mesh.getObjectByName('rightShoulder');
+                if (shoulder) {
+                    const targetX = (Math.PI / 2) - p.targetHeadRot;
+                    shoulder.rotation.x += (targetX - shoulder.rotation.x) * lerpSpeed;
+                }
+                const head = p.mesh.getObjectByName('head');
+                if (head) {
+                    const targetHeadX = -p.targetHeadRot;
+                    head.rotation.x += (targetHeadX - head.rotation.x) * lerpSpeed;
+                }
+            }
+        }
+    }
+
+    // [NEW] Local Camera Interpolation
+    if (targetCamPos.lengthSq() > 0) {
+        // Distance check to prevent huge lerps on respawn if missed
+        if (camera.position.distanceTo(targetCamPos) > 5.0) {
+            camera.position.copy(targetCamPos); // Snap if too far
+        } else {
+            camera.position.lerp(targetCamPos, 15.0 * dt);
+        }
     }
 }
 animate();
