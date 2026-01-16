@@ -188,56 +188,83 @@ function createPlayerMesh(role, weaponType) {
     const group = new THREE.Group();
     group.castShadow = true;
 
-    // --- TEXTURES ---
-    const camoTexture = getCamoTexture(); // [FIX] Use cached
+    // --- CACHING HELPERS ---
+    // [NEW] Geometry Cache
+    if (!window._boxGeoCache) window._boxGeoCache = {};
+    function getBoxGeo(w, h, d) {
+        const k = `${w.toFixed(2)}_${h.toFixed(2)}_${d.toFixed(2)}`;
+        if (!window._boxGeoCache[k]) window._boxGeoCache[k] = new THREE.BoxGeometry(w, h, d);
+        return window._boxGeoCache[k];
+    }
 
-    // Common materials
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-    const camoMat = new THREE.MeshStandardMaterial({ map: camoTexture, roughness: 0.9 });
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.5 }); // Skin tone for hands if needed
+    // [NEW] Material Cache
+    if (!window._matCache) window._matCache = {};
+    function getMat(name, colorVal = null) {
+        let k = name;
+        if (colorVal !== null) k += `_${colorVal}`;
+
+        if (window._matCache[k]) return window._matCache[k];
+
+        let mat;
+        if (name === 'dark') mat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+        else if (name === 'camo') mat = new THREE.MeshStandardMaterial({ map: getCamoTexture(), roughness: 0.9 });
+        else if (name === 'skin') mat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.5 });
+        else if (name === 'body') mat = new THREE.MeshStandardMaterial({ color: colorVal, roughness: 0.8 });
+        else if (name === 'accent') mat = new THREE.MeshStandardMaterial({ color: colorVal, roughness: 0.4 });
+        else if (name === 'eye') mat = new THREE.MeshStandardMaterial({ color: colorVal, roughness: 0.2 });
+
+        window._matCache[k] = mat;
+        return mat;
+    }
+
+    // Common materials (via Cache)
+    const darkMat = getMat('dark');
+    const camoMat = getMat('camo');
+    const skinMat = getMat('skin');
 
     // Defaults
     let bodyColor = 0x0088ff;
     let accentColor = 0xffaa00;
 
+
     // ... (Keep existing role logic check if needed, but we override for visual style requested)
     // User asked to "add the skin", implying replacement or update. 
     // Let's use Camo for Vanguard (default).
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.8 });
+    const bodyMat = getMat('body', bodyColor);
     let mainMat = bodyMat;
     if (role === 'vanguard') {
         mainMat = camoMat;
         accentColor = 0xffd700; // Keep gold visor? Or maybe black/dark? Image shows Yellow visor.
     }
 
-    const accentMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.4 });
-    const eyeMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.2 });
+    const accentMat = getMat('accent', accentColor);
+    const eyeMat = getMat('eye', accentColor);
 
     // 1. Torso
     let torsoW = 1, torsoH = 1.2, torsoD = 0.6;
     if (role === 'titan') { torsoW = 1.4; torsoD = 0.8; }
     if (role === 'shadow') { torsoW = 0.9; }
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoW, torsoH, torsoD), mainMat);
+    const torso = new THREE.Mesh(getBoxGeo(torsoW, torsoH, torsoD), mainMat);
     torso.position.y = 0.6;
     torso.castShadow = true;
     group.add(torso);
 
     // Chest detail (Vest)
     if (role === 'vanguard') {
-        const vest = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.8, 0.7), camoMat); // Slightly bulkier camo vest
+        const vest = new THREE.Mesh(getBoxGeo(1.05, 0.8, 0.7), camoMat); // Slightly bulkier camo vest
         vest.position.set(0, 0, 0);
         torso.add(vest);
 
         // Yellow plate from image
-        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.1), accentMat);
+        const plate = new THREE.Mesh(getBoxGeo(0.6, 0.5, 0.1), accentMat);
         plate.position.set(0, 0.2, -0.36); // Front
         torso.add(plate);
     }
 
     // 2. Head
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), mainMat);
+    const head = new THREE.Mesh(getBoxGeo(0.6, 0.6, 0.6), mainMat);
     head.name = 'head'; // [FIX] Name required for sync
     head.position.y = 1.6;
     head.castShadow = true;
@@ -248,12 +275,12 @@ function createPlayerMesh(role, weaponType) {
         const helmetGroup = new THREE.Group();
 
         // Dome
-        const dome = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.7), camoMat);
+        const dome = new THREE.Mesh(getBoxGeo(0.7, 0.3, 0.7), camoMat);
         dome.position.y = 0.35;
         helmetGroup.add(dome);
 
         // Brim/Sides
-        const brim = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.15, 0.8), camoMat);
+        const brim = new THREE.Mesh(getBoxGeo(0.72, 0.15, 0.8), camoMat);
         brim.position.y = 0.2;
         helmetGroup.add(brim);
 
@@ -263,23 +290,23 @@ function createPlayerMesh(role, weaponType) {
     // Visor/Eyes
     if (role === 'vanguard') {
         // Image shows a large rectangular yellow/gold visor
-        const visor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 0.1), accentMat);
+        const visor = new THREE.Mesh(getBoxGeo(0.5, 0.25, 0.1), accentMat);
         visor.position.set(0, 0, -0.31);
         head.add(visor);
     } else if (role === 'shadow') {
-        const hood = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), bodyMat);
+        const hood = new THREE.Mesh(getBoxGeo(0.7, 0.7, 0.7), bodyMat);
         head.add(hood);
-        const eye1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), eyeMat);
+        const eye1 = new THREE.Mesh(getBoxGeo(0.1, 0.05, 0.05), eyeMat);
         eye1.position.set(-0.15, 0, -0.36); // Move to -Z (Front)
         head.add(eye1);
         const eye2 = eye1.clone();
         eye2.position.set(0.15, 0, -0.36); // Move to -Z (Front)
         head.add(eye2);
     } else if (role === 'titan') {
-        const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.7), accentMat);
+        const jaw = new THREE.Mesh(getBoxGeo(0.7, 0.3, 0.7), accentMat);
         jaw.position.set(0, -0.2, 0);
         head.add(jaw);
-        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), eyeMat);
+        const eye = new THREE.Mesh(getBoxGeo(0.4, 0.1, 0.1), eyeMat);
         eye.position.set(0, 0.1, -0.31); // Move to -Z (Front)
         head.add(eye);
     }
@@ -293,7 +320,7 @@ function createPlayerMesh(role, weaponType) {
     leftShoulder.position.set(-armOffset, 1.1, 0); // Shoulder Height
     group.add(leftShoulder);
 
-    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, armD), mainMat);
+    const leftArm = new THREE.Mesh(getBoxGeo(armW, armH, armD), mainMat);
     leftArm.position.set(0, -0.4, 0); // Offset so pivot is at top
     leftShoulder.add(leftArm);
 
@@ -303,7 +330,7 @@ function createPlayerMesh(role, weaponType) {
     rightShoulder.position.set(armOffset, 1.1, 0); // Shoulder Height
     group.add(rightShoulder);
 
-    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, armD), mainMat);
+    const rightArm = new THREE.Mesh(getBoxGeo(armW, armH, armD), mainMat);
     rightArm.name = 'rightArm'; // [FIX] Name it for lookups
     rightArm.position.set(0, -0.4, 0); // Offset so pivot is at top
     rightShoulder.add(rightArm);
@@ -344,7 +371,7 @@ function createPlayerMesh(role, weaponType) {
     leftLegGroup.position.set(-(torsoW / 4), 0, 0); // Hip Pivot Point (Body Y=0)
     group.add(leftLegGroup);
 
-    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(legW, legH, legD), darkMat);
+    const leftLeg = new THREE.Mesh(getBoxGeo(legW, legH, legD), darkMat);
     leftLeg.position.set(0, -0.6, 0); // Offset geometry so top is at pivot
     leftLegGroup.add(leftLeg);
 
@@ -354,7 +381,7 @@ function createPlayerMesh(role, weaponType) {
     rightLegGroup.position.set((torsoW / 4), 0, 0); // Hip Pivot Point (Body Y=0)
     group.add(rightLegGroup);
 
-    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(legW, legH, legD), darkMat);
+    const rightLeg = new THREE.Mesh(getBoxGeo(legW, legH, legD), darkMat);
     rightLeg.position.set(0, -0.6, 0); // Offset geometry so top is at pivot
     rightLegGroup.add(rightLeg);
 

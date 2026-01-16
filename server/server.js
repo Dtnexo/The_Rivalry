@@ -957,7 +957,7 @@ function gameLoop() {
                                 players[pid].body.collisionFilterMask = 1 | 2;
 
                                 players[pid].hp = HERO_STATS[players[pid].role].hp;
-                                players[pid].ammo = WEAPON_STATS[players[pid].weapon].ammo;
+                                players[pid].ammo = WEAPON_STATS[players[pid].weapon] ? WEAPON_STATS[players[pid].weapon].ammo : 30;
                                 players[pid].isDead = false;
                                 delete players[pid].nextSpawn;
                             }
