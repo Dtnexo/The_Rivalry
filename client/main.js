@@ -1056,7 +1056,22 @@ socket.on('snapshot', (snapshot) => {
             // Ensure scale is 0 just in case
             p.mesh.scale.set(0, 0, 0);
         } else {
-            p.mesh.scale.set(1, 1, 1);
+            // [NEW] Visual Slide Effect for Remote Players
+            if (pData.isSliding) {
+                // Slide: Crouch/Squash
+                // 1. Squash Y scale
+                p.mesh.scale.set(1, 0.6, 1);
+                // 2. Lower center to keep feet on ground? 
+                // Pivot is at feet (roughly). If we scale, it shrinks towards pivot?
+                // Our pivots are mixed (hips).
+                // Let's just scale Y and maybe offset slightly if needed?
+                // Actually, if we scale the entire group, it shrinks towards 0,0,0 of the group (hips).
+                // Since hips are at Y ~ 0.6 (server)?
+                // Visual Fix:
+            } else {
+                p.mesh.scale.set(1, 1, 1);
+            }
+
             p.mesh.visible = (pData.id !== myFunctionId); // Visible if not me
             p.nameplate.visible = (pData.id !== myFunctionId);
         }
@@ -1070,7 +1085,9 @@ socket.on('snapshot', (snapshot) => {
                     targetCamPos.set(pData.x, pData.y + 1.6, pData.z);
                     isFirstSpawn = false;
                 } else {
-                    targetCamPos.set(pData.x, pData.y + 1.6, pData.z);
+                    // [NEW] Slide Visuals: Lower camera if sliding
+                    const cameraHeight = pData.isSliding ? 0.8 : 1.6;
+                    targetCamPos.set(pData.x, pData.y + cameraHeight, pData.z);
                 }
             }
 
@@ -1181,12 +1198,14 @@ socket.on('leaderboard_update', (data) => {
 });
 
 // --- INPUT ---
-const keys = { w: false, a: false, s: false, d: false, ' ': false, mouseLeft: false, mouseLeftProcessed: false, mouseRight: false, r: false };
+const keys = { w: false, a: false, s: false, d: false, ' ': false, mouseLeft: false, mouseLeftProcessed: false, mouseRight: false, r: false, shift: false };
 window.addEventListener('keydown', (e) => {
     if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true;
+    if (e.key === 'Shift') keys.shift = true;
 });
 window.addEventListener('keyup', (e) => {
     if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false;
+    if (e.key === 'Shift') keys.shift = false;
 });
 
 // Button Listeners
@@ -1324,6 +1343,7 @@ setInterval(() => {
             jump: keys[' '],
             shoot: shouldShoot,
             reload: keys.r,
+            slide: keys.shift, // [NEW] Slide Input
             viewDir: { x: camDir.x, y: camDir.y, z: camDir.z }
         };
         socket.emit('input', inputKey);
@@ -1385,6 +1405,23 @@ function performMeleeAttack(type) {
 
     // 2. Network Event
     socket.emit('melee_attack', { type: type });
+}
+
+// [NEW] Camera Dip for Sliding
+function updateSlideVisuals() {
+    if (keys.shift && keys.w) {
+        // Simple "Dip" effect
+        // targetCamPos.y -= 0.5? 
+        // We sync position from server, so this might fight with server corrections unless we offset the RENDER mesh/camera relative to physics body.
+        // Actually camera is attached to nothing, it is just set to pData.x/y/z.
+        // Let's rely on server physics to lower the player for now, OR add a local offset.
+        // If server changes body height/hitbox, camera drops naturally?
+        // Server handles physics position. If we shrink hitbox, center drops?
+        // Let's manually offset camera Y if isSliding locally for immediate feedback?
+        // But main loop overrides camera position from server snapshot every frame?
+        // See: camera.position.set(pData.x, pData.y + 1.6, pData.z);
+        // We can check if isSliding tag is on player?
+    }
 }
 
 function animateKnifeSwing(type) {

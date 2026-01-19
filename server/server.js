@@ -420,12 +420,23 @@ io.on('connection', (socket) => {
         ammo: startAmmo,
         maxAmmo: WEAPON_STATS[weapon] ? WEAPON_STATS[weapon].ammo : 30,
         isReloading: false,
+        ammo: startAmmo,
+        maxAmmo: WEAPON_STATS[weapon] ? WEAPON_STATS[weapon].ammo : 30,
+        isReloading: false,
         reloadEndTime: 0,
         lastShootTime: 0,
-        jumpCount: 0 // [NEW] Track jumps for Double Jump logic
+        jumpCount: 0,
+        isSliding: false, // [NEW] Slide State
+        slideEndTime: 0,
+        lastSlideTime: 0
     };
 
     socket.emit('welcome', { id: socket.id, role: role, weapon: weapon, x: playerBody.position.x, z: playerBody.position.z, ry: initialRy });
+
+    // --- SNAPSHOT EXTENSION ---
+    // We need to send isSliding to clients for camera dip
+    // We'll trust the snapshot loop picks it up if we add it to the player object correctly.
+    // Actually snapshot construction is in gameLoop, let's check it.
 
     // [NEW] Initial Leaderboard
     broadcastLeaderboard();
@@ -737,9 +748,10 @@ function gameLoop() {
             moveSpeed *= 1.2;
         }
 
+        const recentlyJumped = (now - p.lastJumpTime < 200);
+
         if (inputs.moveDir) {
             const inputV = new CANNON.Vec3(inputs.moveDir.x, 0, inputs.moveDir.y).scale(moveSpeed);
-            const recentlyJumped = (now - p.lastJumpTime < 200);
 
             if (isGrounded && !recentlyJumped) {
                 // Ground Movement
@@ -767,19 +779,61 @@ function gameLoop() {
             desiredV.z = 0;
         }
 
-        p.body.velocity.x = desiredV.x;
-        p.body.velocity.z = desiredV.z;
-
-        const recentlyJumped = (now - p.lastJumpTime < 200);
         if (isGrounded && inputs.moveDir && !recentlyJumped) {
             p.body.velocity.y = desiredV.y;
         }
 
-        // Air Physics Fix
-        if (!isGrounded) {
-            p.body.linearDamping = 0.0;
+        // --- SLIDE MECHANIC ---
+        // [MODIFIED] No cooldown, but requires FRESH input (cannot hold)
+        const canSlide = isGrounded && inputs.moveDir && !p.isSliding;
+
+        // Check !p.prevSlideInput to prevent hold-to-slide
+        if (inputs.slide && !p.prevSlideInput && canSlide) {
+            p.isSliding = true;
+            p.slideEndTime = now + 800; // 800ms Slide
+            p.lastSlideTime = now;
+
+            // Speed Boost (Impulse)
+            const slideDir = new CANNON.Vec3(inputs.moveDir.x, 0, inputs.moveDir.y).unit();
+            const boost = 30; // Reduced to 30
+            p.body.velocity.x += slideDir.x * boost;
+            p.body.velocity.z += slideDir.z * boost;
+        }
+
+        p.prevSlideInput = inputs.slide; // [NEW] Track previous input
+
+        if (p.isSliding) {
+            if (now > p.slideEndTime) {
+                p.isSliding = false;
+            }
+            // Damping handled below
+        }
+
+        // Apply Velocity (Only if NOT sliding, or partially? )
+        if (!p.isSliding) {
+            p.body.velocity.x = desiredV.x;
+            p.body.velocity.z = desiredV.z;
+
+            // Air Physics Fix (Only apply default damping if NOT sliding)
+            if (!isGrounded) {
+                p.body.linearDamping = 0.0;
+            } else {
+                p.body.linearDamping = 0.01;
+            }
         } else {
-            p.body.linearDamping = 0.01;
+            // While sliding:
+            if (isGrounded) {
+                // [MODIFIED] Delayed Friction
+                // First 300ms: Low friction (Glide)
+                // After 300ms: High friction (Brake)
+                if (now - p.lastSlideTime < 300) {
+                    p.body.linearDamping = 0.1; // Glide phase
+                } else {
+                    p.body.linearDamping = 0.9; // Braking phase
+                }
+            } else {
+                p.body.linearDamping = 0.0; // No friction in air -> Keep Slide Momentum (Slide Jump)
+            }
         }
 
         // --- JUMP LOGIC (Double Jump for Knife) ---
@@ -1044,7 +1098,8 @@ function gameLoop() {
             weapon: p.weapon, // Sync Weapon
             ammo: p.ammo, // Sync Ammo
             hp: p.hp,
-            isDead: p.isDead // [NEW] Sync death state
+            isDead: p.isDead, // [NEW] Sync death state
+            isSliding: p.isSliding // [NEW] Sync slide state for visuals
         });
     }
 
