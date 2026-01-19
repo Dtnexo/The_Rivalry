@@ -421,7 +421,8 @@ io.on('connection', (socket) => {
         maxAmmo: WEAPON_STATS[weapon] ? WEAPON_STATS[weapon].ammo : 30,
         isReloading: false,
         reloadEndTime: 0,
-        lastShootTime: 0
+        lastShootTime: 0,
+        jumpCount: 0 // [NEW] Track jumps for Double Jump logic
     };
 
     socket.emit('welcome', { id: socket.id, role: role, weapon: weapon, x: playerBody.position.x, z: playerBody.position.z, ry: initialRy });
@@ -730,8 +731,14 @@ function gameLoop() {
         // --- MOVEMENT LOGIC ---
         let desiredV = new CANNON.Vec3(0, p.body.velocity.y, 0);
 
+        // [NEW] KNIFE SPEED BOOST (20%)
+        let moveSpeed = stats.speed;
+        if (p.weapon === 'knife') {
+            moveSpeed *= 1.2;
+        }
+
         if (inputs.moveDir) {
-            const inputV = new CANNON.Vec3(inputs.moveDir.x, 0, inputs.moveDir.y).scale(stats.speed);
+            const inputV = new CANNON.Vec3(inputs.moveDir.x, 0, inputs.moveDir.y).scale(moveSpeed);
             const recentlyJumped = (now - p.lastJumpTime < 200);
 
             if (isGrounded && !recentlyJumped) {
@@ -744,7 +751,7 @@ function gameLoop() {
                     let tangent = inputV.vsub(n.scale(inputV.dot(n)));
                     if (tangent.lengthSquared() > 0.001) {
                         tangent.normalize();
-                        tangent = tangent.scale(stats.speed);
+                        tangent = tangent.scale(moveSpeed);
                         desiredV.x = tangent.x;
                         desiredV.y = tangent.y;
                         desiredV.z = tangent.z;
@@ -775,18 +782,48 @@ function gameLoop() {
             p.body.linearDamping = 0.01;
         }
 
-        // --- JUMP LOGIC ---
+        // --- JUMP LOGIC (Double Jump for Knife) ---
+        if (isGrounded) {
+            p.jumpCount = 0; // Reset
+        }
+
         if (inputs.jump && !p.prevJump) {
             p.jumpQueuedTime = now;
         }
 
-        if (now - p.jumpQueuedTime < 200 && canJump) {
-            p.body.velocity.y = 12; // Jump Force
-            p.body.position.y += 0.05;
-            p.lastGroundedTime = 0;
-            p.jumpQueuedTime = 0;
-            p.lastJumpTime = now;
+        // Standard Jump or Air Jump (if Knife + Count < 1)
+        // If Knife -> Max 1 extra air jump (Total 2)
+        // If Gun -> Max 0 extra (Total 1)
+        const maxAirJumps = (p.weapon === 'knife') ? 1 : 0;
+
+        // Condition: (Queued recently) AND ( (Grounded) OR (AirJump Allowed) )
+        // Note: isGrounded is handled by canJump logic usually, but let's be explicit
+        // We only want to consume a jump if we actually Jumped.
+
+        const tryJump = (now - p.jumpQueuedTime < 200);
+
+        if (tryJump) {
+            if (isGrounded) {
+                // Ground Jump
+                p.body.velocity.y = 12;
+                p.body.position.y += 0.05;
+                p.lastGroundedTime = 0;
+                p.jumpQueuedTime = 0;
+                p.lastJumpTime = now;
+                // p.jumpCount stays 0 or becomes 1? 
+                // Usually Ground jump doesn't count towards "Air Jumps", 
+                // OR it counts as the first jump. Let's say it counts as 0, 
+                // so jumpCount represents "Air Jumps Performed".
+                p.jumpCount = 0;
+            } else if (p.jumpCount < maxAirJumps) {
+                // Air Jump (Double Jump)
+                p.body.velocity.y = 12; // Full force or slightly less? Full is fun.
+                p.jumpCount++;
+                p.jumpQueuedTime = 0;
+                console.log(`[Jump] Double jump for ${p.username}`);
+            }
         }
+
         p.prevJump = inputs.jump;
 
         // --- SHOOTING LOGIC ---
